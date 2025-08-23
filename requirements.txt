@@ -1,8 +1,6 @@
 discord.py==2.4.0
 python-dotenv==1.0.1
 httpx==0.27.0
-pydantic==2.7.4
 PyYAML==6.0.2
-# keep-alive用（Qiita記事はFlask使用）
 Flask==3.0.3
-# orjson / rapidfuzz は削除（ネイティブ拡張で落ちやすい）
+# ← FastAPI / pydantic / orjson / rapidfuzz は入れない
