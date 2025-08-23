@@ -1,18 +1,16 @@
 
-import asyncio, os, json, yaml
+# core/orchestrator.py
+import os, asyncio, json, yaml
 from typing import Dict, Any
-
-# 冒頭の import を修正
-# from .schemas import ExtractOutput, JSON_SCHEMA
 from .schemas import JSON_SCHEMA, coerce_extract_output
 from .ensemble import merge_outputs
 from .model import forecast
 from .cache import get_cache, cache_key
 
-from providers.llm_openai import extract_policies_openai
-from providers.llm_claude import extract_policies_claude
-from providers.llm_gemini import extract_policies_gemini
-from providers.llm_local import extract_policies_local
+from providers.llm_openai import extract_policies_openai   # async
+from providers.llm_gemini import extract_policies_gemini   # async
+# from providers.llm_claude import extract_policies_claude # 使うなら async
+from providers.llm_local import extract_policies_local     # ← これは同期関数！
 from providers.data_worldbank import fetch_wb_profile
 from providers.data_imf import fetch_imf_profile
 from providers.fx_exchangerate import fetch_fx
@@ -37,44 +35,36 @@ def get_last_explain_for_channel(ch: int) -> str | None:
     return _channel_explain.get(ch)
 
 
-            # core/orchestrator.py
-
-async def extract_policies(text: str):
+        async def extract_policies(text: str):
     tasks = []
-    # 非同期プロバイダ（awaitable）
+    # ここには「await できるもの（async関数呼び出し）」だけを入れる
     if os.getenv("OPENAI_API_KEY"):
         tasks.append(extract_policies_openai(text))
     if os.getenv("GEMINI_API_KEY"):
         tasks.append(extract_policies_gemini(text))
-    # Claude を使うなら↓も（キーがあるときだけ）
     # if os.getenv("ANTHROPIC_API_KEY"):
     #     tasks.append(extract_policies_claude(text))
 
     results = []
-    # awaitable があるときだけ gather
     if tasks:
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    # ローカル抽出は同期関数なので、gatherに混ぜず「あとから追加」
+    # ローカル抽出は同期関数なので、gather に混ぜず “あとから” 追加
     try:
         results.append(extract_policies_local(text))
     except Exception as e:
         results.append(e)
 
-    # 以降はそのまま（JSON化＆検証）
+    # 以降は変えずにOK（JSON → 正規化 → 合議）
     valids = []
     for r in results:
         if isinstance(r, Exception):
             continue
         try:
-            import json
             data_obj = json.loads(r) if isinstance(r, str) else r
             data_norm = coerce_extract_output(data_obj)
-            try:
-                mname = data_obj.get("_model_name")
-            except Exception:
-                mname = "unknown"
-            data_norm["_model_name"] = mname or "unknown"
+            mname = (data_obj.get("_model_name") if isinstance(data_obj, dict) else None) or "unknown"
+            data_norm["_model_name"] = mname
             valids.append(data_norm)
         except Exception:
             continue
@@ -82,7 +72,7 @@ async def extract_policies(text: str):
     if not valids:
         raise RuntimeError("政策抽出に失敗（全プロバイダ）")
 
-    merged = merge_outputs(valids)
+    return merge_outputs(valids)
     return merged
             
 def pick_tier(gdp_pc: float | None) -> str:
