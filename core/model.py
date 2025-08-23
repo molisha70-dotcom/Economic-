@@ -117,6 +117,5 @@ def forecast(profile: Dict[str, Any], extract: Dict[str, Any], horizon: int) -> 
         cpi.append(target + gap)
 
     scenarios = {"base": base, "low": low, "high": high}
-    explain = " "
-".join(explain_lines)
+    explain = "\n".join(explain_lines)
     return scenarios, cpi, explain
