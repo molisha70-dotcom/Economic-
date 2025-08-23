@@ -39,7 +39,8 @@ async def assume(interaction: discord.Interaction, kv_pairs: str):
     await interaction.response.send_message(f"✅ 上書き設定を保存しました: `{json.dumps(overrides, ensure_ascii=False)}`")
 
 from discord import app_commands
-import asyncio, traceback
+import  traceback
+import asyncio, inspect
 # ★ 可能ならファイル先頭でimportしておく（関数内importで失敗しても返信は済ませられる）
 from core.orchestrator import set_last_explain_for_channel
 
@@ -48,10 +49,27 @@ async def forecast_cmd(interaction: discord.Interaction, text: str, horizon: int
     await interaction.response.defer(thinking=True)
     try:
         overrides = get_overrides_for_channel(interaction.channel_id)
-        result = await asyncio.to_thread(
-            run_pipeline, country=country, horizon=horizon, text=text, overrides=overrides
-        )
 
+        # ★ run_pipeline が async か sync かを判定して実行
+        if asyncio.iscoroutinefunction(run_pipeline):
+            result = await asyncio.wait_for(
+                run_pipeline(country=country, horizon=horizon, text=text, overrides=overrides),
+                timeout=60
+            )
+        else:
+            result = await asyncio.wait_for(
+                asyncio.to_thread(run_pipeline, country=country, horizon=horizon, text=text, overrides=overrides),
+                timeout=60
+            )
+
+        # ここからは必ず dict として扱えるようにガード
+        if inspect.isawaitable(result):
+            result = await result  # 念のため、二重防御
+
+        if not isinstance(result, dict):
+            raise TypeError(f"pipeline returned {type(result).__name__}, expected dict")
+
+        # ===== 出力整形（KeyError防止の安全版）=====
         scenarios = result.get("scenarios", {})
         profile   = result.get("profile_used") or {}
         policies  = (result.get("policies_struct") or {}).get("policies", [])
@@ -60,24 +78,22 @@ async def forecast_cmd(interaction: discord.Interaction, text: str, horizon: int
         tp  = profile.get("tier_params") or {}
         pot = tp.get("potential_g", 4.0)
 
-        lines = []
-        lines.append(f"**【予測結果】{profile.get('display_name','Unknown')} / {horizon}年**")
-        lines.append(f"潜在成長の基準: {pot:.1f}%（ティア: {profile.get('income_tier','?')}）")
-
+        def _fmt(x): return "?" if x is None else x
         infl  = profile.get("inflation_recent")
         inv   = profile.get("investment_rate")
         open_ = profile.get("openness_ratio")
-        def _fmt(x): return "?" if x is None else x
+
+        lines = []
+        lines.append(f"**【予測結果】{profile.get('display_name','Unknown')} / {horizon}年**")
+        lines.append(f"潜在成長の基準: {pot:.1f}%（ティア: {profile.get('income_tier','?')}）")
         lines.append(f"直近インフレ: {_fmt(infl)}% ／ 投資率: {_fmt(inv)} ／ 開放度: {_fmt(open_)}")
         lines.append("")
-
         for k, path in (scenarios or {}).items():
             try:
                 yrs = ", ".join([f"{x:.1f}%" for x in path])
             except Exception:
                 yrs = "(no data)"
             lines.append(f"・{k.upper()}：{yrs}")
-
         lines.append("")
         lines.append("— 抽出された政策（要約） —")
         for p in policies[:8]:
@@ -93,12 +109,13 @@ async def forecast_cmd(interaction: discord.Interaction, text: str, horizon: int
         content = "\n".join(lines)
         await interaction.edit_original_response(content=content)
 
-        # explainの記憶
+        # explain保存（失敗してもユーザ応答済み）
         from core.orchestrator import set_last_explain_for_channel
         set_last_explain_for_channel(interaction.channel_id, explain)
 
     except Exception as e:
         await interaction.edit_original_response(content=f"❌ エラー: {type(e).__name__}: {e}")
+
 
 @tree.command(name="explain", description="直近の推計の根拠・係数を表示")
 async def explain(interaction: discord.Interaction):
