@@ -64,43 +64,63 @@ async def forecast_cmd(  # ★ 関数名は forecast_cmd に（他の "forecast"
             timeout=60
         )
 
-        # ---- ここから整形 ----
-        scenarios = result["scenarios"]
-        profile = result["profile_used"]
-        policies = result["policies_struct"]["policies"]
-        explain  = result["explain"]
+   # ── ここから置き換え ─────────────────────────────────────────
+scenarios = result.get("scenarios", {})
+profile   = result.get("profile_used") or {}
+policies  = (result.get("policies_struct") or {}).get("policies", [])
+explain   = result.get("explain", "")
 
-        lines = []
-        lines.append(f"**【予測結果】{profile.get('display_name','Unknown')} / {horizon}年**")
-        lines.append(f"潜在成長の基準: {profile['tier_params']['potential_g']:.1f}%（ティア: {profile['income_tier']}）")
-        lines.append(f"直近インフレ: {profile.get('inflation_recent','?')}% ／ 投資率: {profile.get('investment_rate','?')} ／ 開放度: {profile.get('openness_ratio','?')}")
-        lines.append("")
-        for k, path in scenarios.items():
-            yrs = ", ".join([f"{x:.1f}%" for x in path])
-            lines.append(f"・{k.upper()}：{yrs}")
-        lines.append("")
-        lines.append("— 抽出された政策（要約） —")
-        for p in policies[:8]:
-            lever = "/".join(p.get("lever", []))
-            scale = p.get("scale")
-            scale_txt = ""
-            if scale:
-                unit = scale.get("unit","")
-                val = scale.get("value")
-                if val is not None:
-                    scale_txt = f"（規模: {val} {unit}）"
-            lines.append(f"・{p.get('title','(no title)')}｜{lever}｜lag={p.get('lag_years')} {scale_txt}")
-        if len(policies) > 8:
-            lines.append(f"...and {len(policies)-8} more")
-        content = "\n".join(lines)
+# tier_params が無い場合でも落ちないように
+tp  = profile.get("tier_params") or {}
+pot = tp.get("potential_g", 4.0)
 
-        # ★ 3) defer後は “edit_original_response” で1回だけ返す（followupは使わない）
-        #    （2000文字超対策：長い時は分割してfollowupで追加送信してもOK）
-        if len(content) <= 1900:
-            await interaction.edit_original_response(content=content)
-        else:
-            await interaction.edit_original_response(content=content[:1900] + "\n…(続きは追送)")
-            await interaction.followup.send(content[1900:])
+lines = []
+lines.append(f"**【予測結果】{profile.get('display_name','Unknown')} / {horizon}年**")
+lines.append(f"潜在成長の基準: {pot:.1f}%（ティア: {profile.get('income_tier','?')}）")
+
+# 数値は .get で安全に（None なら '?' 表示）
+infl = profile.get("inflation_recent")
+inv  = profile.get("investment_rate")
+open_ = profile.get("openness_ratio")
+def _fmt(x):
+    return "?" if x is None else x
+
+lines.append(f"直近インフレ: {_fmt(infl)}% ／ 投資率: {_fmt(inv)} ／ 開放度: {_fmt(open_)}")
+lines.append("")
+
+# シナリオ出力（存在チェック付き）
+for k, path in (scenarios or {}).items():
+    try:
+        yrs = ", ".join([f\"{x:.1f}%\" for x in path])
+    except Exception:
+        yrs = "(no data)"
+    lines.append(f"・{k.upper()}：{yrs}")
+
+lines.append("")
+lines.append("— 抽出された政策（要約） —")
+for p in policies[:8]:
+    lever = "/".join(p.get("lever", []))
+    scale = p.get("scale") or {}
+    val   = scale.get("value")
+    unit  = scale.get("unit","")
+    scale_txt = f"（規模: {val} {unit}）" if val is not None else ""
+    lines.append(f"・{p.get('title','(no title)')}｜{lever}｜lag={p.get('lag_years')} {scale_txt}")
+
+if len(policies) > 8:
+    lines.append(f"...and {len(policies)-8} more")
+
+content = "\n".join(lines)
+
+# defer後の返信は edit_original_response を基本に（長文は追送）
+if len(content) <= 1900:
+    await interaction.edit_original_response(content=content)
+else:
+    await interaction.edit_original_response(content=content[:1900] + "\n…(続きは追送)")
+    await interaction.followup.send(content[1900:])
+
+# （必要ならこの後に set_last_explain_for_channel などの副作用処理）
+# ── 置き換えここまで ─────────────────────────────────────────
+
 
         # ★ 4) 返答後に副作用系を実行（ここで失敗してもユーザーには返答済み）
         set_overrides_for_channel(ch, overrides)
