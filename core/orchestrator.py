@@ -36,23 +36,40 @@ def set_last_explain_for_channel(ch: int, explain: str):
 def get_last_explain_for_channel(ch: int) -> str | None:
     return _channel_explain.get(ch)
 
+
+            # core/orchestrator.py
+
 async def extract_policies(text: str):
     tasks = []
-    if os.getenv("OPENAI_API_KEY"): tasks.append(extract_policies_openai(text))
-    if os.getenv("GEMINI_API_KEY"): tasks.append(extract_policies_gemini(text))
-    # Claude を使わないなら呼ばない
-    tasks.append(extract_policies_local(text))
+    # 非同期プロバイダ（awaitable）
+    if os.getenv("OPENAI_API_KEY"):
+        tasks.append(extract_policies_openai(text))
+    if os.getenv("GEMINI_API_KEY"):
+        tasks.append(extract_policies_gemini(text))
+    # Claude を使うなら↓も（キーがあるときだけ）
+    # if os.getenv("ANTHROPIC_API_KEY"):
+    #     tasks.append(extract_policies_claude(text))
 
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+    results = []
+    # awaitable があるときだけ gather
+    if tasks:
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    # ローカル抽出は同期関数なので、gatherに混ぜず「あとから追加」
+    try:
+        results.append(extract_policies_local(text))
+    except Exception as e:
+        results.append(e)
+
+    # 以降はそのまま（JSON化＆検証）
     valids = []
     for r in results:
-        if isinstance(r, Exception): 
+        if isinstance(r, Exception):
             continue
         try:
             import json
             data_obj = json.loads(r) if isinstance(r, str) else r
             data_norm = coerce_extract_output(data_obj)
-            # _model_name を付与
             try:
                 mname = data_obj.get("_model_name")
             except Exception:
@@ -61,8 +78,10 @@ async def extract_policies(text: str):
             valids.append(data_norm)
         except Exception:
             continue
+
     if not valids:
         raise RuntimeError("政策抽出に失敗（全プロバイダ）")
+
     merged = merge_outputs(valids)
     return merged
             
