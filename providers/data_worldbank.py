@@ -83,7 +83,7 @@ def fetch_country_profile(country_name: str) -> Optional[Dict[str, Any]]:
             by_code.setdefault(code, []).append({"date": row.get("date"), "value": row.get("value")})
 
         gdp   = _latest_non_null(by_code.get(IND["gdp"], []))
-        gdp_pc  = _latest_non_null(by_code.get(IND["gdp_pc"], []))
+        gdp_pc= _latest_non_null(by_code.get(IND["gdp_pc"], []))
         invest= _latest_non_null(by_code.get(IND["invest_rate"], []))
         open_ = _latest_non_null(by_code.get(IND["openness"], []))
         infl  = _latest_non_null(by_code.get(IND["inflation"], []))
