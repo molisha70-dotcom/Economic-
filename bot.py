@@ -38,20 +38,37 @@ async def assume(interaction: discord.Interaction, kv_pairs: str):
     set_overrides_for_channel(ch, overrides)
     await interaction.response.send_message(f"✅ 上書き設定を保存しました: `{json.dumps(overrides, ensure_ascii=False)}`")
 
+from discord import app_commands
+import asyncio, traceback
+# ★ 可能ならファイル先頭でimportしておく（関数内importで失敗しても返信は済ませられる）
+from core.orchestrator import set_last_explain_for_channel
+
 @tree.command(name="forecast", description="政策テキストからGDP成長率を推定")
 @app_commands.describe(text="政策テキスト（箇条書きOK）", horizon="予測年数(1-10)", country="国名（任意）")
-async def forecast(interaction: discord.Interaction, text: str, horizon: int = 5, country: str | None = None):
+async def forecast_cmd(  # ★ 関数名は forecast_cmd に（他の "forecast" と衝突しがち）
+    interaction: discord.Interaction, 
+    text: str, 
+    horizon: int = 5, 
+    country: str | None = None
+):
+    # ★ 1) 最初にACK（thinking表示）— これが最初のawaitになるように！
     await interaction.response.defer(thinking=True)
+
     try:
         ch = interaction.channel_id
         overrides = get_overrides_for_channel(ch)
-        result = await run_pipeline(country=country, horizon=horizon, text=text, overrides=overrides)
 
-        # 整形して出力
+        # ★ 2) 重い処理はタイムアウト付き（長時間でトークン失効を避ける）
+        result = await asyncio.wait_for(
+            run_pipeline(country=country, horizon=horizon, text=text, overrides=overrides),
+            timeout=60
+        )
+
+        # ---- ここから整形 ----
         scenarios = result["scenarios"]
         profile = result["profile_used"]
         policies = result["policies_struct"]["policies"]
-        explain = result["explain"]
+        explain  = result["explain"]
 
         lines = []
         lines.append(f"**【予測結果】{profile.get('display_name','Unknown')} / {horizon}年**")
@@ -75,17 +92,26 @@ async def forecast(interaction: discord.Interaction, text: str, horizon: int = 5
             lines.append(f"・{p.get('title','(no title)')}｜{lever}｜lag={p.get('lag_years')} {scale_txt}")
         if len(policies) > 8:
             lines.append(f"...and {len(policies)-8} more")
+        content = "\n".join(lines)
 
-        await interaction.followup.send("\n".join(lines))
+        # ★ 3) defer後は “edit_original_response” で1回だけ返す（followupは使わない）
+        #    （2000文字超対策：長い時は分割してfollowupで追加送信してもOK）
+        if len(content) <= 1900:
+            await interaction.edit_original_response(content=content)
+        else:
+            await interaction.edit_original_response(content=content[:1900] + "\n…(続きは追送)")
+            await interaction.followup.send(content[1900:])
 
-        # 詳細の説明を記憶（/explain で返す）
-        set_overrides_for_channel(ch, overrides)  # keep
-        from core.orchestrator import set_last_explain_for_channel
+        # ★ 4) 返答後に副作用系を実行（ここで失敗してもユーザーには返答済み）
+        set_overrides_for_channel(ch, overrides)
         set_last_explain_for_channel(ch, explain)
 
+    except asyncio.TimeoutError:
+        # ★ defer後は常に edit_original_response
+        await interaction.edit_original_response(content="⏳ 少し時間がかかっています。もう一度お試しください。")
     except Exception as e:
-        await interaction.followup.send(f"❌ エラー: {type(e).__name__}: {e}")
-
+        traceback.print_exc()
+        await interaction.edit_original_response(content=f"❌ エラー: {type(e).__name__}: {e}")
 @tree.command(name="explain", description="直近の推計の根拠・係数を表示")
 async def explain(interaction: discord.Interaction):
     ch = interaction.channel_id
