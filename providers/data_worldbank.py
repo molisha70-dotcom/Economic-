@@ -64,7 +64,6 @@ def fetch_country_profile(country_name: str) -> Optional[Dict[str, Any]]:
     # 主要指標
     IND = {
         "gdp": "NY.GDP.MKTP.CD",
-        "gdp_pc": "NY.GDP.PCAP.CD",
         "invest_rate": "NE.GDI.FTOT.ZS",
         "openness": "NE.TRD.GNFS.ZS",
         "inflation": "FP.CPI.TOTL.ZG",
@@ -83,7 +82,6 @@ def fetch_country_profile(country_name: str) -> Optional[Dict[str, Any]]:
             by_code.setdefault(code, []).append({"date": row.get("date"), "value": row.get("value")})
 
         gdp   = _latest_non_null(by_code.get(IND["gdp"], []))
-        gdp_pc= _latest_non_null(by_code.get(IND["gdp_pc"], []))
         invest= _latest_non_null(by_code.get(IND["invest_rate"], []))
         open_ = _latest_non_null(by_code.get(IND["openness"], []))
         infl  = _latest_non_null(by_code.get(IND["inflation"], []))
@@ -121,9 +119,6 @@ def fetch_country_profile(country_name: str) -> Optional[Dict[str, Any]]:
         return profile
         # 返す直前（return profile の直前）に追記
         print(f"[WB] iso3={iso3} invest={invest} openness={open_} infl={infl} pop={pop} income_id={income_id}")
-        print(f"[WB] iso3={iso3} keys={list(IND.keys())} has_gdp_pc={'gdp_pc' in IND} "
-      f"vals: invest={invest} open={open_} infl={infl} pop={pop}")
-
     except Exception:
         return None
 
