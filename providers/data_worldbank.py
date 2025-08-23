@@ -124,3 +124,7 @@ def fetch_wb_profile(country_name: str):
         return profile
     except Exception:
         return None
+
+def fetch_wb_profile(country_name: str):
+    # 互換用。昔のコードが呼んでも fetch_country_profile を返す
+    return fetch_country_profile(country_name)
