@@ -146,11 +146,12 @@ async def extract_policies(text: str):
     return merged
             
 def pick_tier(gdp_pc: float | None) -> str:
-    if gdp_pc is None:
+     if gdp_pc is None:
         return "middle_income"
-    if gdp_pc < 1500: return "low_income"
-    if gdp_pc < 13000: return "middle_income"
-    return "high_income"
+    if gdp_pc < 1500:
+        return "low_income"
+    if gdp_pc < 13000:
+        return "high_income"
 
 def fuse_profile(wb, imf, fx, trade, overrides, country_name: str) -> dict:
     prof: dict = {}
@@ -162,8 +163,20 @@ def fuse_profile(wb, imf, fx, trade, overrides, country_name: str) -> dict:
                   "labor_growth","debt_to_gdp"):
             if wb.get(k) is not None:
                 prof[k] = wb[k]
-    tier_name = pick_tier(gdp_pc)
-    tier = TIERS["tiers"][tier_name]
+   # wb（= World Bank の辞書）から 1人あたりGDP を読む。
+# providers/data_worldbank.py で profile に "gdp_per_capita" を入れていないなら None でOK。
+        gdp_pc_val = (wb or {}).get("gdp_per_capita")  # 無ければ None
+
+# まずはWBが持っている所得ティアを優先、無ければ gdp_pc から推定
+        tier_from_wb  = (wb or {}).get("income_tier")
+        tier_name     = tier_from_wb or pick_tier_by_gdp_pc(gdp_pc_val)
+
+# 既に用意してある正規化＆パラメータ取得ヘルパーを使う（以前ご案内のもの）
+        prof["income_tier"] = _normalize_tier(tier_name)
+        prof["tier_params"] = get_tier_params(prof["income_tier"])
+        tier_params = get_tier_params(tier_name)  # or prof["tier_params"] = ...
+
+
 
     prof = {
         "display_name": country or "Unknown",
