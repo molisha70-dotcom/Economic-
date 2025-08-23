@@ -111,24 +111,48 @@ def fuse_profile(wb: Dict[str,Any], imf: Dict[str,Any], fx: Dict[str,Any], trade
     return prof
 
 async def build_country_profile(country_name: str, overrides: dict):
-    # World Bank (sync), IMF/FX/Comtrade (async) をまとめて取得
+    # 取得（wb=同期→to_thread、他はasync）
     wb, imf, fx, trade = await asyncio.gather(
-        _run_sync(fetch_wb_profile, country_name),   # 同期関数はラップしてawaitable化
+        _run_sync(fetch_wb_profile, country_name),
         fetch_imf_profile(country_name),
         fetch_fx(country_name),
         fetch_comtrade(country_name),
         return_exceptions=True
     )
 
-    # エラーは None に変換
+    # 例外を None に
     def _ok(x):
         return None if isinstance(x, Exception) else x
-
     wb, imf, fx, trade = (_ok(wb), _ok(imf), _ok(fx), _ok(trade))
 
-    # プロファイルを統合
-    prof = fuse_profile(wb, imf, fx, trade, overrides, country_name)
+    # まずは既存のマージロジックを試す
+    prof = None
+    try:
+        prof = fuse_profile(wb, imf, fx, trade, overrides, country_name)
+    except Exception:
+        prof = None
+
+    # ★ フォールバック：必ず辞書を返す
+    if not isinstance(prof, dict) or not prof:
+        prof = {
+            "display_name": (wb or {}).get("display_name", country_name),
+            "iso3": (wb or {}).get("iso3"),
+            "baseline_gdp_usd": (wb or {}).get("baseline_gdp_usd", 1.0e10),
+            "income_tier": (wb or {}).get("income_tier", "middle_income"),
+            "inflation_recent": (wb or {}).get("inflation_recent", 4.0),   # %
+            "openness_ratio": (wb or {}).get("openness_ratio", 0.8),       # ratio
+            "investment_rate": (wb or {}).get("investment_rate", 0.25),    # ratio
+            "labor_growth": (wb or {}).get("labor_growth", 1.0),            # %
+            "debt_to_gdp": (wb or {}).get("debt_to_gdp", 0.5),
+        }
+        # overrides で上書き
+        if overrides:
+            for k, v in overrides.items():
+                if v is not None:
+                    prof[k] = v
+
     return prof
+
 
 
 async def run_pipeline(country: str|None, horizon: int, text: str, overrides: Dict[str,Any]):
