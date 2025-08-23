@@ -22,6 +22,53 @@ async def _run_sync(func, *args, **kwargs):
     """同期関数をスレッドで非ブロッキング実行（awaitable化）"""
     return await asyncio.to_thread(func, *args, **kwargs)
 
+# core/orchestrator.py（ファイル上部・importの下あたり）
+TIERS = {
+    "high_income": {
+        "potential_g": 2.0,    # 例: 高所得の潜在成長
+        "capital_share": 0.35,
+        "inflation_target": 2.0,
+        "fiscal_multiplier": {"capex": 0.8, "current": 0.4},
+        "trade_elasticity": 0.2,
+        "tfp_coeff": {
+            "logistics": 0.15, "automation": 0.25, "education": 0.15, "regulation": 0.25,
+            "governance": 0.2, "energy": 0.1, "infrastructure": 0.1, "trade": 0.15,
+            "industry": 0.15, "finance": 0.1, "security": 0.1
+        },
+        "default_lags": {"infra": 2, "ports": 2, "education": 3, "regulation": 1}
+    },
+    "middle_income": {
+        "potential_g": 4.0,
+        "capital_share": 0.35,
+        "inflation_target": 4.0,
+        "fiscal_multiplier": {"capex": 1.0, "current": 0.5},
+        "trade_elasticity": 0.3,
+        "tfp_coeff": {
+            "logistics": 0.2, "automation": 0.3, "education": 0.2, "regulation": 0.3,
+            "governance": 0.2, "energy": 0.15, "infrastructure": 0.15, "trade": 0.2,
+            "industry": 0.2, "finance": 0.1, "security": 0.1
+        },
+        "default_lags": {"infra": 2, "ports": 2, "education": 3, "regulation": 1}
+    },
+    "low_income": {
+        "potential_g": 5.5,
+        "capital_share": 0.35,
+        "inflation_target": 5.0,
+        "fiscal_multiplier": {"capex": 1.2, "current": 0.6},
+        "trade_elasticity": 0.35,
+        "tfp_coeff": {
+            "logistics": 0.25, "automation": 0.2, "education": 0.25, "regulation": 0.25,
+            "governance": 0.2, "energy": 0.2, "infrastructure": 0.2, "trade": 0.25,
+            "industry": 0.25, "finance": 0.1, "security": 0.1
+        },
+        "default_lags": {"infra": 2, "ports": 2, "education": 3, "regulation": 1}
+    },
+}
+
+def get_tier_params(income_tier: str) -> dict:
+    return TIERS.get(income_tier or "middle_income", TIERS["middle_income"])
+
+
 with open("tiers.yml", "r", encoding="utf-8") as f:
     TIERS = yaml.safe_load(f)
 
@@ -151,7 +198,10 @@ async def build_country_profile(country_name: str, overrides: dict):
                 if v is not None:
                     prof[k] = v
 
-    return prof
+  prof["income_tier"] = prof.get("income_tier") or "middle_income"
+　prof["tier_params"] = get_tier_params(prof["income_tier"])
+return prof
+
 
 
 
