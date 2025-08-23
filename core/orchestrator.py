@@ -198,8 +198,8 @@ async def build_country_profile(country_name: str, overrides: dict):
                 if v is not None:
                     prof[k] = v
 
-  prof["income_tier"] = prof.get("income_tier") or "middle_income"
-　prof["tier_params"] = get_tier_params(prof["income_tier"])
+        prof["income_tier"] = prof.get("income_tier") or "middle_income"
+        prof["tier_params"] = get_tier_params(prof["income_tier"])
 return prof
 
 
