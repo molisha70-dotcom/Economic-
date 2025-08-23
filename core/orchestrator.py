@@ -35,7 +35,7 @@ def get_last_explain_for_channel(ch: int) -> str | None:
     return _channel_explain.get(ch)
 
 
-        async def extract_policies(text: str):
+async def extract_policies(text: str):
     tasks = []
     # ここには「await できるもの（async関数呼び出し）」だけを入れる
     if os.getenv("OPENAI_API_KEY"):
