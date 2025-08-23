@@ -110,29 +110,26 @@ def fuse_profile(wb: Dict[str,Any], imf: Dict[str,Any], fx: Dict[str,Any], trade
     }
     return prof
 
-async def build_country_profile(country_name: str|None, overrides: Dict[str,Any]):
-    ck = cache_key("profile", country_name or "unknown", "latest")
-    cache = get_cache()
-    if (cached := cache.get(ck)) is not None:
-        return cached
-wb, imf, fx, trade = await asyncio.gather(
-    _run_sync(fetch_wb_profile, country_name),  # ← 同期関数をラップ
-    fetch_imf_profile(country_name),
-    fetch_fx(country_name),
-    fetch_comtrade(country_name),
-    return_exceptions=True
-)
+async def build_country_profile(country_name: str, overrides: dict):
+    # World Bank (sync), IMF/FX/Comtrade (async) をまとめて取得
+    wb, imf, fx, trade = await asyncio.gather(
+        _run_sync(fetch_wb_profile, country_name),   # 同期関数はラップしてawaitable化
+        fetch_imf_profile(country_name),
+        fetch_fx(country_name),
+        fetch_comtrade(country_name),
+        return_exceptions=True
+    )
 
-# エラーが混ざったら None にしておく（任意・安全）
-def _ok(x):
-    import Exception as _E  # 既に Exception が import 済みなら不要
-    return None if isinstance(x, Exception) else x
+    # エラーは None に変換
+    def _ok(x):
+        return None if isinstance(x, Exception) else x
 
-wb, imf, fx, trade = (_ok(wb), _ok(imf), _ok(fx), _ok(trade))
+    wb, imf, fx, trade = (_ok(wb), _ok(imf), _ok(fx), _ok(trade))
 
+    # プロファイルを統合
     prof = fuse_profile(wb, imf, fx, trade, overrides, country_name)
-    cache.set(ck, prof, ttl=86400)
     return prof
+
 
 async def run_pipeline(country: str|None, horizon: int, text: str, overrides: Dict[str,Any]):
     horizon = max(1, min(10, horizon))
