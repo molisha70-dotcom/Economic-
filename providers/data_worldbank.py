@@ -118,6 +118,9 @@ def fetch_country_profile(country_name: str) -> Optional[Dict[str, Any]]:
             "debt_to_gdp": None,
         }
         return profile
+        # 返す直前（return profile の直前）に追記
+        print(f"[WB] iso3={iso3} invest={invest} openness={open_} infl={infl} pop={pop} income_id={income_id}")
+
     except Exception:
         return None
 
