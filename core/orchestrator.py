@@ -2,7 +2,9 @@
 import asyncio, os, json, yaml
 from typing import Dict, Any
 
-from .schemas import ExtractOutput, JSON_SCHEMA
+# 冒頭の import を修正
+# from .schemas import ExtractOutput, JSON_SCHEMA
+from .schemas import JSON_SCHEMA, coerce_extract_output
 from .ensemble import merge_outputs
 from .model import forecast
 from .cache import get_cache, cache_key
@@ -37,29 +39,33 @@ def get_last_explain_for_channel(ch: int) -> str | None:
 async def extract_policies(text: str):
     tasks = []
     if os.getenv("OPENAI_API_KEY"): tasks.append(extract_policies_openai(text))
-    if os.getenv("ANTHROPIC_API_KEY"): tasks.append(extract_policies_claude(text))
     if os.getenv("GEMINI_API_KEY"): tasks.append(extract_policies_gemini(text))
+    # Claude を使わないなら呼ばない
     tasks.append(extract_policies_local(text))
 
     results = await asyncio.gather(*tasks, return_exceptions=True)
     valids = []
     for r in results:
-        if isinstance(r, Exception): continue
+        if isinstance(r, Exception): 
+            continue
         try:
-            data = ExtractOutput.model_validate_json(r)
+            import json
+            data_obj = json.loads(r) if isinstance(r, str) else r
+            data_norm = coerce_extract_output(data_obj)
+            # _model_name を付与
             try:
-                mname = json.loads(r).get("_model_name")
+                mname = data_obj.get("_model_name")
             except Exception:
                 mname = "unknown"
-            setattr(data, "_model_name", mname)
-            valids.append(data)
+            data_norm["_model_name"] = mname or "unknown"
+            valids.append(data_norm)
         except Exception:
             continue
     if not valids:
         raise RuntimeError("政策抽出に失敗（全プロバイダ）")
     merged = merge_outputs(valids)
     return merged
-
+            
 def pick_tier(gdp_pc: float | None) -> str:
     if gdp_pc is None:
         return "middle_income"
