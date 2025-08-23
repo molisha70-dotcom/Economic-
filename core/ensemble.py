@@ -1,0 +1,96 @@
+
+from typing import List, Dict, Any
+from rapidfuzz import fuzz
+from .schemas import ExtractOutput, Policy
+from .utils import normalize_title, jaccard
+
+BASE_WEIGHTS = {"openai":0.4, "claude":0.35, "gemini":0.25, "local":0.15}
+CONF_W = {"S":1.0,"A":0.9,"B":0.7,"C":0.5,"D":0.3}
+
+def cluster_policies(outputs: List[ExtractOutput]) -> List[Dict[str, Any]]:
+    items = []
+    for o in outputs:
+        model_name = getattr(o, "_model_name", "unknown")
+        for pol in o.policies:
+            items.append({"model": model_name, "policy": pol})
+
+    clusters = []
+    used = [False]*len(items)
+    for i, it in enumerate(items):
+        if used[i]: continue
+        base_title = normalize_title(it["policy"].title)
+        base_lever = set(it["policy"].lever or [])
+        group = [i]
+        used[i] = True
+        for j in range(i+1, len(items)):
+            if used[j]: continue
+            jt = normalize_title(items[j]["policy"].title)
+            jl = set(items[j]["policy"].lever or [])
+            title_sim = fuzz.token_sort_ratio(base_title, jt)/100.0
+            lever_sim = jaccard(base_lever, jl)
+            if 0.5*title_sim + 0.5*lever_sim >= 0.75:
+                used[j] = True
+                group.append(j)
+        clusters.append({"members":[items[k] for k in group]})
+    return clusters
+
+def level_from_score(score: float) -> str:
+    if score >= 0.85: return "S"
+    if score >= 0.7:  return "A"
+    if score >= 0.55: return "B"
+    if score >= 0.4:  return "C"
+    return "D"
+
+def merge_outputs(outputs: List[ExtractOutput]) -> Dict[str, Any]:
+    clusters = cluster_policies(outputs)
+    merged_policies = []
+    for cl in clusters:
+        votes = []
+        for m in cl["members"]:
+            model = m["model"]
+            pol: Policy = m["policy"]
+            w_model = BASE_WEIGHTS.get(model, 0.2)
+            w_conf = CONF_W.get(pol.confidence, 0.5)
+            votes.append(w_model * w_conf)
+        score = sum(votes)
+        if score < 0.5:
+            continue
+
+        titles = [m["policy"].title for m in cl["members"] if m["policy"].title]
+        title = max(titles, key=len) if titles else "(untitled)"
+
+        from collections import Counter
+        levs = []
+        for m in cl["members"]:
+            levs += (m["policy"].lever or [])
+        lever_counts = Counter(levs)
+        lever = [x for x,_ in lever_counts.most_common(3)]
+
+        dirs = []
+        for m in cl["members"]:
+            dirs += (m["policy"].direction or [])
+        dir_counts = Counter(dirs)
+        direction = [x for x,_ in dir_counts.most_common(3)]
+
+        lags = [m["policy"].lag_years for m in cl["members"] if m["policy"].lag_years is not None]
+        lag = int(sorted(lags)[len(lags)//2]) if lags else None
+
+        priority = {"%GDP":3,"USD":2,"LCU":1,"qty":0,"unknown":-1}
+        scales = [m["policy"].scale for m in cl["members"] if m["policy"].scale is not None]
+        scales = [s for s in scales if s.unit is not None]
+        scale = None
+        if scales:
+            scales.sort(key=lambda s: priority.get(s.unit, -1), reverse=True)
+            scale = {"value": scales[0].value, "unit": scales[0].unit}
+
+        merged_policies.append({
+            "title": title,
+            "lever": lever,
+            "direction": direction[:3],
+            "lag_years": lag,
+            "scale": scale,
+            "confidence": level_from_score(score)
+        })
+
+    horizon = max([o.horizon_years for o in outputs] + [5])
+    return {"horizon_years": horizon, "policies": merged_policies}

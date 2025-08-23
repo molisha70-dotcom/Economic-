@@ -1,0 +1,119 @@
+
+import asyncio, os, json, yaml
+from typing import Dict, Any
+
+from .schemas import ExtractOutput, JSON_SCHEMA
+from .ensemble import merge_outputs
+from .model import forecast
+from .cache import get_cache, cache_key
+
+from providers.llm_openai import extract_policies_openai
+from providers.llm_claude import extract_policies_claude
+from providers.llm_gemini import extract_policies_gemini
+from providers.llm_local import extract_policies_local
+from providers.data_worldbank import fetch_wb_profile
+from providers.data_imf import fetch_imf_profile
+from providers.fx_exchangerate import fetch_fx
+from providers.data_comtrade import fetch_comtrade
+
+with open("tiers.yml", "r", encoding="utf-8") as f:
+    TIERS = yaml.safe_load(f)
+
+_channel_overrides: Dict[int, Dict[str, Any]] = {}
+_channel_explain: Dict[int, str] = {}
+
+def set_overrides_for_channel(ch: int, overrides: Dict[str, Any]):
+    _channel_overrides[ch] = overrides
+
+def get_overrides_for_channel(ch: int) -> Dict[str, Any]:
+    return _channel_overrides.get(ch, {})
+
+def set_last_explain_for_channel(ch: int, explain: str):
+    _channel_explain[ch] = explain
+
+def get_last_explain_for_channel(ch: int) -> str | None:
+    return _channel_explain.get(ch)
+
+async def extract_policies(text: str):
+    tasks = []
+    if os.getenv("OPENAI_API_KEY"): tasks.append(extract_policies_openai(text))
+    if os.getenv("ANTHROPIC_API_KEY"): tasks.append(extract_policies_claude(text))
+    if os.getenv("GEMINI_API_KEY"): tasks.append(extract_policies_gemini(text))
+    tasks.append(extract_policies_local(text))
+
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    valids = []
+    for r in results:
+        if isinstance(r, Exception): continue
+        try:
+            data = ExtractOutput.model_validate_json(r)
+            try:
+                mname = json.loads(r).get("_model_name")
+            except Exception:
+                mname = "unknown"
+            setattr(data, "_model_name", mname)
+            valids.append(data)
+        except Exception:
+            continue
+    if not valids:
+        raise RuntimeError("政策抽出に失敗（全プロバイダ）")
+    merged = merge_outputs(valids)
+    return merged
+
+def pick_tier(gdp_pc: float | None) -> str:
+    if gdp_pc is None:
+        return "middle_income"
+    if gdp_pc < 1500: return "low_income"
+    if gdp_pc < 13000: return "middle_income"
+    return "high_income"
+
+def fuse_profile(wb: Dict[str,Any], imf: Dict[str,Any], fx: Dict[str,Any], trade: Dict[str,Any], overrides: Dict[str,Any], country: str|None):
+    baseline_gdp = wb.get("gdp_nom_usd")
+    gdp_pc = wb.get("gdp_pc_usd")
+    infl = imf.get("inflation") if imf else None
+    if infl is None:
+        infl = wb.get("inflation_cpi")
+    tier_name = pick_tier(gdp_pc)
+    tier = TIERS["tiers"][tier_name]
+
+    prof = {
+        "display_name": country or "Unknown",
+        "baseline_gdp_usd": overrides.get("baseline_gdp_usd", baseline_gdp or 1e10),
+        "income_tier": tier_name,
+        "inflation_recent": overrides.get("inflation_recent", infl if infl is not None else tier.get("inflation_target", 4.0)),
+        "openness_ratio": overrides.get("openness_ratio", wb.get("openness", 0.8)/100.0 if wb.get("openness") else 0.8),
+        "investment_rate": overrides.get("investment_rate", wb.get("investment_rate", 25.0)/100.0 if wb.get("investment_rate") else 0.25),
+        "labor_growth": overrides.get("labor_growth", wb.get("pop_growth", 1.0)*100 if wb.get("pop_growth") else 1.0),
+        "debt_to_gdp": overrides.get("debt_to_gdp", imf.get("debt_to_gdp") if imf else 0.5),
+        "tier_params": tier
+    }
+    return prof
+
+async def build_country_profile(country_name: str|None, overrides: Dict[str,Any]):
+    ck = cache_key("profile", country_name or "unknown", "latest")
+    cache = get_cache()
+    if (cached := cache.get(ck)) is not None:
+        return cached
+    wb, imf, fx, trade = await asyncio.gather(
+        fetch_wb_profile(country_name),
+        fetch_imf_profile(country_name),
+        fetch_fx(base=os.getenv("DEFAULT_BASE_CURRENCY","USD")),
+        fetch_comtrade(country_name)
+    )
+    prof = fuse_profile(wb, imf, fx, trade, overrides, country_name)
+    cache.set(ck, prof, ttl=86400)
+    return prof
+
+async def run_pipeline(country: str|None, horizon: int, text: str, overrides: Dict[str,Any]):
+    horizon = max(1, min(10, horizon))
+    policies = await extract_policies(text)
+    profile  = await build_country_profile(country, overrides)
+    scenarios, cpi_path, explain = forecast(profile, policies, horizon)
+    explain += f"\n[ProfileResolved] {json.dumps(profile, ensure_ascii=False)}"
+    return {
+        "scenarios": scenarios,
+        "cpi": cpi_path,
+        "explain": explain,
+        "profile_used": profile,
+        "policies_struct": policies
+    }

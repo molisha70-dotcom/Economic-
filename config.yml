@@ -1,0 +1,25 @@
+
+timeouts:
+  connect: 5
+  read: 25
+retries:
+  max_attempts: 2
+  backoff_base_sec: 0.8
+
+providers:
+  llm:
+    order: ["openai", "claude", "gemini", "local"]
+    json_strict: true
+  data:
+    worldbank: {enabled: true}
+    imf:       {enabled: true}
+    comtrade:  {enabled: true}
+    fx:        {enabled: true, base: "USD"}
+
+cache:
+  type: "memory"
+  ttl_seconds:
+    wb: 86400
+    imf: 86400
+    comtrade: 259200
+    fx: 43200

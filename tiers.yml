@@ -1,0 +1,61 @@
+
+tiers:
+  low_income:
+    potential_g: 5.0
+    capital_share: 0.40
+    inflation_target: 6.0
+    fiscal_multiplier: {capex: 1.2, current: 0.6}
+    trade_elasticity: 0.25
+    tfp_coeff:
+      logistics: 0.30
+      automation: 0.20
+      education: 0.20
+      regulation: 0.25
+      governance: 0.25
+      energy: 0.15
+      infrastructure: 0.20
+      trade: 0.15
+      industry: 0.20
+      finance: 0.10
+      security: 0.10
+    default_lags: {infra: 2, ports: 2, education: 4, regulation: 1}
+
+  middle_income:
+    potential_g: 4.0
+    capital_share: 0.35
+    inflation_target: 4.0
+    fiscal_multiplier: {capex: 1.0, current: 0.5}
+    trade_elasticity: 0.30
+    tfp_coeff:
+      logistics: 0.20
+      automation: 0.30
+      education: 0.20
+      regulation: 0.30
+      governance: 0.20
+      energy: 0.15
+      infrastructure: 0.15
+      trade: 0.20
+      industry: 0.20
+      finance: 0.10
+      security: 0.10
+    default_lags: {infra: 2, ports: 2, education: 3, regulation: 1}
+
+  high_income:
+    potential_g: 1.8
+    capital_share: 0.30
+    inflation_target: 2.0
+    fiscal_multiplier: {capex: 0.7, current: 0.4}
+    trade_elasticity: 0.35
+    tfp_coeff:
+      logistics: 0.10
+      automation: 0.25
+      education: 0.10
+      regulation: 0.20
+      governance: 0.15
+      energy: 0.10
+      infrastructure: 0.10
+      trade: 0.15
+      industry: 0.15
+      finance: 0.10
+      security: 0.08
+    default_lags: {infra: 3, ports: 2, education: 5, regulation: 1}
