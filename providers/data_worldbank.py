@@ -59,6 +59,9 @@ def _latest_non_null(series: List[Dict[str, Any]]) -> Optional[float]:
     return None
 
 def fetch_country_profile(country_name: str) -> Optional[Dict[str, Any]]:
+    # 既存の fetch_country_profile(...) のすぐ下に追加
+def fetch_wb_profile(country_name: str):
+    return fetch_country_profile(country_name)
     iso3 = resolve_iso3(country_name)
     if not iso3:
         return None
