@@ -11,7 +11,7 @@ from providers.llm_openai import extract_policies_openai   # async
 from providers.llm_gemini import extract_policies_gemini   # async
 # from providers.llm_claude import extract_policies_claude # 使うなら async
 from providers.llm_local import extract_policies_local     # ← これは同期関数！
-from providers.data_worldbank import fetch_wb_profile
+from providers.data_worldbank import fetch_country_profile
 from providers.data_imf import fetch_imf_profile
 from providers.fx_exchangerate import fetch_fx
 from providers.data_comtrade import fetch_comtrade
