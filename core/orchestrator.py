@@ -151,12 +151,16 @@ def pick_tier(gdp_pc: float | None) -> str:
     if gdp_pc < 13000: return "middle_income"
     return "high_income"
 
-def fuse_profile(wb: Dict[str,Any], imf: Dict[str,Any], fx: Dict[str,Any], trade: Dict[str,Any], overrides: Dict[str,Any], country: str|None):
-    baseline_gdp = wb.get("gdp_nom_usd")
-    gdp_pc = wb.get("gdp_pc_usd")
-    infl = imf.get("inflation") if imf else None
-    if infl is None:
-        infl = wb.get("inflation_cpi")
+def fuse_profile(wb, imf, fx, trade, overrides, country_name: str) -> dict:
+    prof: dict = {}
+
+    # 1) 最優先：World Bank
+    if isinstance(wb, dict):
+        for k in ("display_name","iso3","baseline_gdp_usd","income_tier",
+                  "inflation_recent","openness_ratio","investment_rate",
+                  "labor_growth","debt_to_gdp"):
+            if wb.get(k) is not None:
+                prof[k] = wb[k]
     tier_name = pick_tier(gdp_pc)
     tier = TIERS["tiers"][tier_name]
 
@@ -171,6 +175,25 @@ def fuse_profile(wb: Dict[str,Any], imf: Dict[str,Any], fx: Dict[str,Any], trade
         "debt_to_gdp": overrides.get("debt_to_gdp", imf.get("debt_to_gdp") if imf else 0.5),
         "tier_params": tier
     }
+        prof.setdefault("display_name", country_name)
+    prof.setdefault("baseline_gdp_usd", 1.0e10)
+    prof.setdefault("income_tier", "middle_income")
+    prof.setdefault("inflation_recent", 4.0)
+    prof.setdefault("openness_ratio", 0.8)
+    prof.setdefault("investment_rate", 0.25)
+    prof.setdefault("labor_growth", 1.0)
+    prof.setdefault("debt_to_gdp", 0.5)
+
+    # 4) overrides の反映
+    if overrides:
+        for k, v in overrides.items():
+            if v is not None:
+                prof[k] = v
+
+    # 5) ティアパラメータを必ず付与
+    prof["income_tier"] = _normalize_tier(prof.get("income_tier"))
+    prof["tier_params"] = get_tier_params(prof["income_tier"])
+
     return prof
 
 async def build_country_profile(country_name: str, overrides: dict):
@@ -217,6 +240,7 @@ async def build_country_profile(country_name: str, overrides: dict):
     prof = prof or {}
     prof["income_tier"] = _normalize_tier(prof.get("income_tier"))
     prof["tier_params"] = get_tier_params(prof["income_tier"])
+    prof = fuse_profile(wb, imf, fx, trade, overrides, country_name)
     
     return prof
  
