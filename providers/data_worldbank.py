@@ -1,4 +1,3 @@
-
 # providers/data_worldbank.py
 import httpx
 from typing import Optional, Dict, Any, List
@@ -59,9 +58,6 @@ def _latest_non_null(series: List[Dict[str, Any]]) -> Optional[float]:
     return None
 
 def fetch_country_profile(country_name: str) -> Optional[Dict[str, Any]]:
-    # 既存の fetch_country_profile(...) のすぐ下に追加
-def fetch_wb_profile(country_name: str):
-    return fetch_country_profile(country_name)
     iso3 = resolve_iso3(country_name)
     if not iso3:
         return None
@@ -86,11 +82,11 @@ def fetch_wb_profile(country_name: str):
             code = row.get("indicator", {}).get("id")
             by_code.setdefault(code, []).append({"date": row.get("date"), "value": row.get("value")})
 
-        gdp = _latest_non_null(by_code.get(IND["gdp"], []))
-        invest = _latest_non_null(by_code.get(IND["invest_rate"], []))
+        gdp   = _latest_non_null(by_code.get(IND["gdp"], []))
+        invest= _latest_non_null(by_code.get(IND["invest_rate"], []))
         open_ = _latest_non_null(by_code.get(IND["openness"], []))
-        infl = _latest_non_null(by_code.get(IND["inflation"], []))
-        pop = _latest_non_null(by_code.get(IND["pop_grow"], []))
+        infl  = _latest_non_null(by_code.get(IND["inflation"], []))
+        pop   = _latest_non_null(by_code.get(IND["pop_grow"], []))
 
         # 所得ティアを取得（高・中・低）。日本は "HIC" → high_income
         url2 = f"{WB_BASE}/country/{iso3}?format=json"
@@ -125,4 +121,5 @@ def fetch_wb_profile(country_name: str):
     except Exception:
         return None
 
+# 互換用エイリアス（古いコードで fetch_wb_profile を呼んでも動くように）
 fetch_wb_profile = fetch_country_profile
