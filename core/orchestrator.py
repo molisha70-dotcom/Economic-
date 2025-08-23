@@ -146,7 +146,7 @@ async def extract_policies(text: str):
     return merged
             
 def pick_tier(gdp_pc: float | None) -> str:
-     if gdp_pc is None:
+    if gdp_pc is None:
         return "middle_income"
     if gdp_pc < 1500:
         return "low_income"
