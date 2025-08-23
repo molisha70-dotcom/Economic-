@@ -1,5 +1,6 @@
 
 # core/orchestrator.py
+from core.model import make_growth_paths
 import os, asyncio, json, yaml
 from typing import Dict, Any
 from .schemas import JSON_SCHEMA, coerce_extract_output
@@ -245,19 +246,30 @@ async def build_country_profile(country_name: str, overrides: dict):
     return prof
  
 
-
-
-
 async def run_pipeline(country: str|None, horizon: int, text: str, overrides: Dict[str,Any]):
     horizon = max(1, min(10, horizon))
-    policies = await extract_policies(text)
-    profile  = await build_country_profile(country, overrides)
-    scenarios, cpi_path, explain = forecast(profile, policies, horizon)
+
+    # 政策抽出 & プロファイル作成
+    policies_struct = await extract_policies(text)
+    profile         = await build_country_profile(country, overrides)
+
+    # ★ 固定値だった forecast(...) を廃止し、プロファイル & 政策で成長パスを計算
+    scenarios = make_growth_paths(
+        profile,
+        (policies_struct or {}).get("policies", []),
+        horizon
+    )
+
+    # CPIパスや説明文は最小限（必要に応じて後で拡張）
+    cpi_path = []  # 使っていなければ空でOK
+    explain  = "Policy-driven forecast based on profile & levers."
     explain += f"\n[ProfileResolved] {json.dumps(profile, ensure_ascii=False)}"
+
     return {
-        "scenarios": scenarios,
+        "scenarios": scenarios,          # {"BASE":[..], "LOW":[..], "HIGH":[..]}
         "cpi": cpi_path,
         "explain": explain,
         "profile_used": profile,
-        "policies_struct": policies
+        "policies_struct": policies_struct
     }
+
