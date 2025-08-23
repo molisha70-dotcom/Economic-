@@ -176,7 +176,8 @@ def fuse_profile(wb, imf, fx, trade, overrides, country_name: str) -> dict:
         "debt_to_gdp": overrides.get("debt_to_gdp", imf.get("debt_to_gdp") if imf else 0.5),
         "tier_params": tier
     }
-        prof.setdefault("display_name", country_name)
+    
+    prof.setdefault("display_name", country_name)
     prof.setdefault("baseline_gdp_usd", 1.0e10)
     prof.setdefault("income_tier", "middle_income")
     prof.setdefault("inflation_recent", 4.0)
