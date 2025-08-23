@@ -16,6 +16,12 @@ from providers.data_imf import fetch_imf_profile
 from providers.fx_exchangerate import fetch_fx
 from providers.data_comtrade import fetch_comtrade
 
+import asyncio
+
+async def _run_sync(func, *args, **kwargs):
+    """同期関数をスレッドで非ブロッキング実行（awaitable化）"""
+    return await asyncio.to_thread(func, *args, **kwargs)
+
 with open("tiers.yml", "r", encoding="utf-8") as f:
     TIERS = yaml.safe_load(f)
 
@@ -109,12 +115,21 @@ async def build_country_profile(country_name: str|None, overrides: Dict[str,Any]
     cache = get_cache()
     if (cached := cache.get(ck)) is not None:
         return cached
-    wb, imf, fx, trade = await asyncio.gather(
-        fetch_wb_profile(country_name),
-        fetch_imf_profile(country_name),
-        fetch_fx(base=os.getenv("DEFAULT_BASE_CURRENCY","USD")),
-        fetch_comtrade(country_name)
-    )
+wb, imf, fx, trade = await asyncio.gather(
+    _run_sync(fetch_wb_profile, country_name),  # ← 同期関数をラップ
+    fetch_imf_profile(country_name),
+    fetch_fx(country_name),
+    fetch_comtrade(country_name),
+    return_exceptions=True
+)
+
+# エラーが混ざったら None にしておく（任意・安全）
+def _ok(x):
+    import Exception as _E  # 既に Exception が import 済みなら不要
+    return None if isinstance(x, Exception) else x
+
+wb, imf, fx, trade = (_ok(wb), _ok(imf), _ok(fx), _ok(trade))
+
     prof = fuse_profile(wb, imf, fx, trade, overrides, country_name)
     cache.set(ck, prof, ttl=86400)
     return prof
