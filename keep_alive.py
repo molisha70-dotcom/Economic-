@@ -1,4 +1,3 @@
-# keep_alive.py
 from flask import Flask
 from threading import Thread
 import os
@@ -10,8 +9,9 @@ def home():
     return "I'm alive"
 
 def _run():
-    port = int(os.getenv("PORT", "8080"))  # Renderが自動で環境変数PORTを注入
-    app.run(host="0.0.0.0", port=port)
+    port = int(os.getenv("PORT", "8080"))
+    # reloaderを切るのが重要（forkされると検出に失敗しやすい）
+    app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
 
 def keep_alive():
     t = Thread(target=_run, daemon=True)
