@@ -1,6 +1,6 @@
-discord.py==2.4.0
+discord.py[speedups]==2.4.0
 python-dotenv==1.0.1
 httpx==0.27.0
 PyYAML==6.0.2
 Flask==3.0.3
-# ← FastAPI / pydantic / orjson / rapidfuzz は入れない
+uvicorn==0.30.6
