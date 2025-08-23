@@ -1,6 +1,6 @@
 
 from typing import List, Dict, Any
-from rapidfuzz import fuzz
+import difflib
 from .schemas import ExtractOutput, Policy
 from .utils import normalize_title, jaccard
 
@@ -26,7 +26,12 @@ def cluster_policies(outputs: List[ExtractOutput]) -> List[Dict[str, Any]]:
             if used[j]: continue
             jt = normalize_title(items[j]["policy"].title)
             jl = set(items[j]["policy"].lever or [])
-            title_sim = fuzz.token_sort_ratio(base_title, jt)/100.0
+            def _title_sim(a: str, b: str) -> float:
+    a_tokens = " ".join(sorted(a.split()))
+    b_tokens = " ".join(sorted(b.split()))
+    return difflib.SequenceMatcher(None, a_tokens, b_tokens).ratio()
+
+title_sim = _title_sim(base_title, jt)  # 0.0〜1.0
             lever_sim = jaccard(base_lever, jl)
             if 0.5*title_sim + 0.5*lever_sim >= 0.75:
                 used[j] = True
