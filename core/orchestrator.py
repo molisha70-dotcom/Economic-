@@ -22,10 +22,13 @@ async def _run_sync(func, *args, **kwargs):
     """同期関数をスレッドで非ブロッキング実行（awaitable化）"""
     return await asyncio.to_thread(func, *args, **kwargs)
 
-# core/orchestrator.py（ファイル上部・importの下あたり）
+with open("tiers.yml", "r", encoding="utf-8") as f:
+    TIERS = yaml.safe_load(f)
+    
+# ==== ティア定義（importsの直後に置く）====
 TIERS = {
     "high_income": {
-        "potential_g": 2.0,    # 例: 高所得の潜在成長
+        "potential_g": 2.0,
         "capital_share": 0.35,
         "inflation_target": 2.0,
         "fiscal_multiplier": {"capex": 0.8, "current": 0.4},
@@ -65,12 +68,25 @@ TIERS = {
     },
 }
 
-def get_tier_params(income_tier: str) -> dict:
-    return TIERS.get(income_tier or "middle_income", TIERS["middle_income"])
+def _normalize_tier(name: str | None) -> str:
+    """HIC/MIC/LIC や表記ゆれを規格化してキー（*_income）に揃える"""
+    if not name:
+        return "middle_income"
+    s = str(name).strip().lower()
+    if s in ("hic", "high", "high income", "high_income"):
+        return "high_income"
+    if s in ("lic", "low", "low income", "low_income"):
+        return "low_income"
+    # umc/lmc/mic などはまとめて middle
+    if any(x in s for x in ("umc", "lmc", "mic", "middle")):
+        return "middle_income"
+    return "middle_income"
 
+def get_tier_params(income_tier: str | None) -> dict:
+    key = _normalize_tier(income_tier)
+    # .get で安全に、なければ middle_income を返す
+    return TIERS.get(key, TIERS["middle_income"])
 
-with open("tiers.yml", "r", encoding="utf-8") as f:
-    TIERS = yaml.safe_load(f)
 
 _channel_overrides: Dict[int, Dict[str, Any]] = {}
 _channel_explain: Dict[int, str] = {}
@@ -199,10 +215,11 @@ async def build_country_profile(country_name: str, overrides: dict):
                     prof[k] = v
 
     prof = prof or {}
-    prof["income_tier"] = prof.get("income_tier") or "middle_income"
+    prof["income_tier"] = _normalize_tier(prof.get("income_tier"))
     prof["tier_params"] = get_tier_params(prof["income_tier"])
-
-    return prof 
+    
+    return prof
+ 
 
 
 
