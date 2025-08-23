@@ -125,18 +125,14 @@ if __name__ == "__main__":
     from keep_alive import keep_alive
     import os, time, socket
 
-    # 1) 先にFlaskでPORTをlistenさせる
-    keep_alive()
+    keep_alive()  # 先にFlaskでPORTをlisten
     port = int(os.getenv("PORT", "8080"))
     print(f"[keep_alive] trying to open port {port}")
-
-    # 2) ポートが開くのを最大10秒待つ
-    for _ in range(20):
+    for _ in range(20):  # 最大10秒待ち
         with socket.socket() as s:
             if s.connect_ex(("127.0.0.1", port)) == 0:
                 print(f"[keep_alive] port {port} is open ✅")
                 break
         time.sleep(0.5)
 
-    # 3) Discord Bot を起動
     client.run(TOKEN)
