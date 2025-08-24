@@ -23,64 +23,124 @@ def _lever_to_tfp_keys(lever: List[str]) -> List[str]:
 def clamp(x, lo, hi):
     return max(lo, min(hi, x))
 
-def _policy_effect(year: int, policies: list, tier_params: dict) -> float:
-    """
-    年yearに効く政策の合計寄与（%pt）。ラグ後に効く簡易版。
-    lever重みは tier_params["tfp_coeff"] を見る。
-    """
-    tfp = (tier_params or {}).get("tfp_coeff", {}) or {}
-    total = 0.0
-    for p in policies or []:
-        lag = int(p.get("lag_years") or 1)
-        if (year + 1) < lag:
-            continue
-        levers = p.get("lever", []) or []
-        weight = sum(float(tfp.get(lv, 0.0)) for lv in levers)
+# core/model.py
 
-        # 規模スケーリング（ざっくり）
-        scale = p.get("scale") or {}
-        mag = scale.get("value")
-        unit = (scale.get("unit") or "").lower()
-        s_mult = 1.0
-        if isinstance(mag, (int, float)):
-            if unit in ("%gdp", "%"):
-                s_mult += 0.5 * (mag / 1.0)   # GDP比1%で+0.5倍程度の寄与
-            # USD/LCUはここでは無視（本格実装は別換算）
-        total += 0.3 * weight * s_mult      # 係数は暫定
-    return total
+from typing import Dict, Any, List
+import math
 
-def make_growth_paths(profile: dict, policies: list, horizon: int) -> dict:
+def _policy_gain(profile: Dict[str, Any], policies: List[Dict[str, Any]]) -> float:
     """
-    プロファイル（投資率・開放度・インフレ目標/乖離）と政策から
-    BASE/LOW/HIGH の年次成長率パスを返す。
+    政策レバーから TFP/資本蓄積の上乗せを作る簡易関数（年率ポイント）。
+    抽出器の出力に依存しすぎない堅い足回り。
     """
-    profile = profile or {}
-    tp = profile.get("tier_params", {}) or {}
-    pot = float(tp.get("potential_g", 4.0))
+    if not policies:
+        return 0.0
 
+    # ティア別の感応度（適当に安全側）
+    tier = (profile.get("income_tier") or "middle_income").lower()
+    if "high" in tier:
+        tfp_k = 0.10
+        capex_k = 0.08
+    elif "low" in tier:
+        tfp_k = 0.20
+        capex_k = 0.12
+    else:
+        tfp_k = 0.15
+        capex_k = 0.10
+
+    bonus = 0.0
+    for p in policies:
+        lever = " / ".join(p.get("lever", [])).lower()
+        scale = (p.get("scale") or {}).get("value")
+        lag   = p.get("lag_years") or 0
+
+        # スケール未指定でも微小効果は出す
+        if scale is None:
+            base = 0.02
+        else:
+            # 例：10 (兆円/年) なら 0.1% 程度が基本線、Tierで重み
+            base = min(0.005 * float(scale), 0.5)
+
+        # レバー種別で重み
+        if any(k in lever for k in ("infrastructure","infra","port","rail","grid")):
+            gain = capex_k * base
+        elif any(k in lever for k in ("education","human capital","reskilling")):
+            gain = tfp_k * base * 0.8
+        elif any(k in lever for k in ("regulation","deregulation","governance","business")):
+            gain = tfp_k * base
+        elif any(k in lever for k in ("tax","subsidy","industry","semiconductor","manufacturing")):
+            gain = 0.5*(tfp_k+capex_k) * base
+        elif any(k in lever for k in ("trade","port","logistics","fta")):
+            gain = tfp_k * base * 0.7
+        else:
+            gain = 0.5*(tfp_k+capex_k) * (base * 0.5)
+
+        # ラグは累積効果の立ち上がりに反映（初期は効きづらい）
+        gain = gain * (1.0 - min(max(lag, 0), 4) * 0.1)
+        bonus += gain
+
+    # 上限・下限を設置（過大評価防止）
+    return max(-1.0, min(bonus, 1.5))
+
+def make_growth_paths(profile: Dict[str, Any], policies: List[Dict[str, Any]], horizon: int):
+    """
+    profile["tier_params"]["potential_g"] をベースに、政策ボーナス/マクロ状態で調整して
+    BASE/LOW/HIGH の年次パスを返す。
+    戻り値: {"base":[...], "low":[...], "high":[...]}
+    """
+    horizon = max(1, min(10, int(horizon or 5)))
+    tp = (profile.get("tier_params") or {})
+    base_g = float(tp.get("potential_g", 3.0))  # ← ここが「国ごとに違う」肝
+
+    # マクロ状況で微調整：投資率・開放度・インフレ乖離
+    invest = profile.get("investment_rate")
+    open_  = profile.get("openness_ratio")
     infl   = profile.get("inflation_recent")
-    target = tp.get("inflation_target", 2.0 if (profile.get("income_tier")=="high_income") else 4.0)
-    inv    = profile.get("investment_rate")
-    opn    = profile.get("openness_ratio")
+    target = float(tp.get("inflation_target", 3.0))
 
-    # マクロ調整：投資率(基準0.25)、開放度(基準0.60)、インフレ超過のマイナス
     adj = 0.0
-    if isinstance(inv, (int, float)):
-        adj += 2.0 * (inv - 0.25)     # 投資率+0.05で+0.10pp
-    if isinstance(opn, (int, float)):
-        adj += 0.5 * (opn - 0.60)     # 開放度+0.10で+0.05pp
-    if isinstance(infl, (int, float)) and isinstance(target, (int, float)):
-        gap = max(0.0, infl - target)
-        adj -= 0.2 * gap              # ターゲット超過1ptで-0.2pp
+    if isinstance(invest, (int,float)):
+        # 投資率25%を基準、±10%ptで ±0.5pp 程度
+        adj += 0.5 * ((float(invest) - 0.25) / 0.10)
+    if isinstance(open_, (int,float)):
+        # 開放度80%を基準、±20%ptで ±0.3pp 程度
+        adj += 0.3 * ((float(open_) - 0.8) / 0.20)
+    if isinstance(infl, (int,float)):
+        # インフレ目標からの乖離で成長減衰（過熱/デフレともにマイナス）
+        gap = abs(float(infl) - target)
+        adj -= 0.15 * min(gap, 5.0)  # 最大 -0.75pp
 
-    base, low, high = [], [], []
-    for y in range(int(horizon)):
-        pol = _policy_effect(y, policies or [], tp)  # 政策寄与（年毎）
-        g_base = clamp(pot + adj + pol, pot - 2.0, pot + 3.0)
-        base.append(g_base)
-        low.append(clamp(g_base - 0.8, 0.0, 15.0))
-        high.append(clamp(g_base + 0.8, 0.0, 15.0))
-    return {"BASE": base, "LOW": low, "HIGH": high}
+    # 政策ボーナス
+    pol = _policy_gain(profile, policies)
+
+    # ベース成長率
+    g0 = base_g + adj + pol
+    # LOW/HIGH バンド幅（ティアに応じて）
+    if tp is None:
+        band = 0.8
+    else:
+        inc = (profile.get("income_tier") or "").lower()
+        band = 0.8 if "high" in inc else (1.0 if "middle" in inc else 1.2)
+
+    base_path = [max(-3.0, min(g0, 10.0))]
+    low_path  = [base_path[0] - band]
+    high_path = [base_path[0] + band]
+
+    # 2年目以降は徐々に潜在へ回帰（±50%収斂/年）、政策は3年で7割発現
+    for t in range(1, horizon):
+        decay = 0.5
+        pol_rt = min(1.0, 0.7 + 0.15*t)
+        g_t = (base_g + adj) * (1 - pol_rt) + (base_g + adj + pol) * pol_rt
+        prev_b = base_path[-1]
+        next_b = prev_b + decay*(g_t - prev_b)
+        base_path.append(max(-3.0, min(next_b, 10.0)))
+        low_path.append(base_path[-1] - band)
+        high_path.append(base_path[-1] + band)
+
+    # 小数1位＆%に換算するのは呼び出し側（bot.py）がやっているので数値のまま返す
+    return {"base": base_path, "low": low_path, "high": high_path}
+
+
 
 
 def _scale_to_intensity(scale: Dict[str, Any] | None, baseline_gdp: float) -> float:
