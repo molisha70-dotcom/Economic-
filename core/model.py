@@ -62,15 +62,17 @@ def _policy_gain(profile: Dict[str, Any], policies: List[Dict[str, Any]]) -> flo
             base = min(0.005 * float(scale), 0.5)
 
         # レバー種別で重み
-        if any(k in lever for k in ("infrastructure","infra","port","rail","grid")):
+        lever_txt = " / ".join(p.get("lever", [])).lower()
+
+        if any(k in lever_txt for k in ["infrastructure","infra","port","rail","grid","logistics","インフラ","港","港湾","鉄道","送電","電力網","物流","ロジ"]):
             gain = capex_k * base
-        elif any(k in lever for k in ("education","human capital","reskilling")):
+        elif any(k in lever_txt for k in ["education","human capital","reskilling","教育","人材","職業訓練","リスキリング"]):
             gain = tfp_k * base * 0.8
-        elif any(k in lever for k in ("regulation","deregulation","governance","business")):
+        elif any(k in lever_txt for k in ["regulation","deregulation","governance","business","規制","規制改革","ガバナンス","ビジネス"]):
             gain = tfp_k * base
-        elif any(k in lever for k in ("tax","subsidy","industry","semiconductor","manufacturing")):
+        elif any(k in lever_txt for k in ["tax","subsidy","industry","semiconductor","manufacturing","税","減税","補助","補助金","産業","半導体","製造"]):
             gain = 0.5*(tfp_k+capex_k) * base
-        elif any(k in lever for k in ("trade","port","logistics","fta")):
+        elif any(k in lever_txt for k in ["trade","fta","貿易","通商"]):
             gain = tfp_k * base * 0.7
         else:
             gain = 0.5*(tfp_k+capex_k) * (base * 0.5)
