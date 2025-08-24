@@ -143,7 +143,7 @@ def fuse_profile(wb, imf, fx, trade, overrides, country_name: str) -> dict:
     """
     prof: dict = {}
 
-    # --- 0) baseline_gdp_usd を安全に決定 ---
+    # --- 0) baseline_gdp_usd を安全に決定（未定義変数は使わない） ---
     baseline_gdp_usd = None
     if isinstance(wb, dict):
         baseline_gdp_usd = wb.get("baseline_gdp_usd") or wb.get("gdp") or wb.get("ny_gdp_mktp_cd")
@@ -183,8 +183,8 @@ def fuse_profile(wb, imf, fx, trade, overrides, country_name: str) -> dict:
             if v is not None:
                 prof[k] = v
 
-    # --- 4) ティア確定（ここ“だけ”で tier_name を決める） ---
-    tier_name: str = "middle_income"  # 先に初期化（未定義対策）
+    # --- 4) ティア確定（ここ“だけ”で tier_name を決める。未定義にならない） ---
+    tier_name: str = "middle_income"  # 先に初期化（UnboundLocalError対策）
 
     ov_tier = (overrides or {}).get("income_tier") if overrides else None
     if ov_tier:
@@ -199,6 +199,7 @@ def fuse_profile(wb, imf, fx, trade, overrides, country_name: str) -> dict:
     prof["tier_params"] = get_tier_params(tier_name)
 
     return prof
+
 
 
 
