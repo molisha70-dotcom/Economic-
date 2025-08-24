@@ -29,61 +29,72 @@ from typing import Dict, Any, List
 import math
 
 def _policy_gain(profile: Dict[str, Any], policies: List[Dict[str, Any]]) -> float:
-    """
-    政策レバーから TFP/資本蓄積の上乗せを作る簡易関数（年率ポイント）。
-    抽出器の出力に依存しすぎない堅い足回り。
-    """
+    # --- ここはあなたの最新版があるならそれでOK。無ければ簡易版 ---
     if not policies:
         return 0.0
-
-    # ティア別の感応度（適当に安全側）
     tier = (profile.get("income_tier") or "middle_income").lower()
-    if "high" in tier:
-        tfp_k = 0.10
-        capex_k = 0.08
-    elif "low" in tier:
-        tfp_k = 0.20
-        capex_k = 0.12
-    else:
-        tfp_k = 0.15
-        capex_k = 0.10
-
+    tfp_k, capex_k = (0.10, 0.08) if "high" in tier else ((0.15, 0.10) if "middle" in tier else (0.20, 0.12))
     bonus = 0.0
     for p in policies:
-        lever = " / ".join(p.get("lever", [])).lower()
-        scale = (p.get("scale") or {}).get("value")
-        lag   = p.get("lag_years") or 0
-
-        # スケール未指定でも微小効果は出す
-        if scale is None:
-            base = 0.02
-        else:
-            # 例：10 (兆円/年) なら 0.1% 程度が基本線、Tierで重み
-            base = min(0.005 * float(scale), 0.5)
-
-        # レバー種別で重み
-        lever_txt = " / ".join(p.get("lever", [])).lower()
-
-        if any(k in lever_txt for k in ["infrastructure","infra","port","rail","grid","logistics","インフラ","港","港湾","鉄道","送電","電力網","物流","ロジ"]):
+        lev = " / ".join((p.get("lever") or [])).lower()
+        scale = (p.get("scale") or {}).get("value"); base = 0.02 if scale is None else min(0.005*float(scale), 0.5)
+        if any(k in lev for k in ["infrastructure","infra","port","rail","grid","logistics","インフラ","港","鉄道","送電","物流","ロジ"]):
             gain = capex_k * base
-        elif any(k in lever_txt for k in ["education","human capital","reskilling","教育","人材","職業訓練","リスキリング"]):
+        elif any(k in lev for k in ["education","human capital","reskilling","教育","人材","職業訓練","リスキリング"]):
             gain = tfp_k * base * 0.8
-        elif any(k in lever_txt for k in ["regulation","deregulation","governance","business","規制","規制改革","ガバナンス","ビジネス"]):
+        elif any(k in lev for k in ["regulation","deregulation","governance","business","規制","規制改革","ガバナンス","ビジネス"]):
             gain = tfp_k * base
-        elif any(k in lever_txt for k in ["tax","subsidy","industry","semiconductor","manufacturing","税","減税","補助","補助金","産業","半導体","製造"]):
-            gain = 0.5*(tfp_k+capex_k) * base
-        elif any(k in lever_txt for k in ["trade","fta","貿易","通商"]):
+        elif any(k in lev for k in ["tax","subsidy","industry","semiconductor","manufacturing","税","減税","補助","補助金","産業","半導体","製造"]):
+            gain = 0.5*(tfp_k+capex_k)*base
+        elif any(k in lev for k in ["trade","fta","貿易","通商"]):
             gain = tfp_k * base * 0.7
         else:
-            gain = 0.5*(tfp_k+capex_k) * (base * 0.5)
-
-        # ラグは累積効果の立ち上がりに反映（初期は効きづらい）
-        gain = gain * (1.0 - min(max(lag, 0), 4) * 0.1)
+            gain = 0.5*(tfp_k+capex_k)*(base*0.5)
+        lag = p.get("lag_years") or 0
+        gain *= (1.0 - min(max(lag,0),4)*0.1)
         bonus += gain
-
-    # 上限・下限を設置（過大評価防止）
     return max(-1.0, min(bonus, 1.5))
 
+def make_growth_paths(profile: Dict[str, Any], policies: List[Dict[str, Any]], horizon: int):
+    horizon = max(1, min(10, int(horizon or 5)))
+    tp = (profile.get("tier_params") or {})
+    base_g = float(tp.get("potential_g", 3.0))
+    invest = profile.get("investment_rate"); open_ = profile.get("openness_ratio")
+    infl = profile.get("inflation_recent"); target = float(tp.get("inflation_target", 3.0))
+
+    adj = 0.0
+    if isinstance(invest,(int,float)): adj += 0.5 * ((float(invest)-0.25)/0.10)
+    if isinstance(open_, (int,float)): adj += 0.3 * ((float(open_)-0.8)/0.20)
+    if isinstance(infl,  (int,float)): adj -= 0.15 * min(abs(float(infl)-target), 5.0)
+
+    pol = _policy_gain(profile, policies)
+    g0 = base_g + adj + pol
+
+    inc = (profile.get("income_tier") or "").lower()
+    band = 0.8 if "high" in inc else (1.0 if "middle" in inc else 1.2)
+
+    base_path = [max(-3.0, min(g0, 10.0))]
+    low_path  = [base_path[0] - band]
+    high_path = [base_path[0] + band]
+
+    for t in range(1, horizon):
+        decay = 0.5
+        pol_rt = min(1.0, 0.7 + 0.15*t)
+        g_t = (base_g + adj)*(1-pol_rt) + (base_g + adj + pol)*pol_rt
+        next_b = base_path[-1] + decay*(g_t - base_path[-1])
+        base_path.append(max(-3.0, min(next_b, 10.0)))
+        low_path.append(base_path[-1] - band)
+        high_path.append(base_path[-1] + band)
+
+    explain = (
+        f"[Model] base_g={base_g:.2f}, adj={adj:.2f}, pol={pol:.2f}, "
+        f"tier={profile.get('income_tier')}, invest={invest}, open={open_}, infl={infl}, target={target}"
+    )
+    return {"base": base_path, "low": low_path, "high": high_path}, None, explain
+
+# ★ これが呼ばれる前提で（古い固定版を完全に上書き）
+def forecast(profile: Dict[str, Any], policies: List[Dict[str, Any]], horizon: int):
+    return make_growth_paths(profile, policies, horizon)
 def make_growth_paths(profile: Dict[str, Any], policies: List[Dict[str, Any]], horizon: int):
     """
     profile["tier_params"]["potential_g"] をベースに、政策ボーナス/マクロ状態で調整して
