@@ -54,6 +54,12 @@ TIERS = {
     },
 }
 
+def pick_tier_by_gdp_pc(gdp_pc: float | None) -> str:
+    if gdp_pc is None: return "middle_income"
+    if gdp_pc < 1500:  return "low_income"
+    if gdp_pc < 13000: return "middle_income"
+    return "high_income"
+
 def _normalize_tier(name: str | None) -> str:
     """HIC/MIC/LIC や表記ゆれを規格化してキー（*_income）に揃える"""
     if not name:
@@ -128,90 +134,75 @@ async def extract_policies(text: str):
         raise RuntimeError("政策抽出に失敗（全プロバイダ）")
 
     return merge_outputs(valids)
-    return merged
             
-def pick_tier(gdp_pc: float | None) -> str:
-    if gdp_pc is None:
-        return "middle_income"
-    if gdp_pc < 1500:
-        return "low_income"
-    if gdp_pc < 13000:
-        return "high_income"
 
 def fuse_profile(wb, imf, fx, trade, overrides, country_name: str) -> dict:
+    """
+    各ソースをマージ → デフォルトで穴埋め → overrides 反映 →
+    income_tier と tier_params を必ずセットして返す安全版。
+    """
     prof: dict = {}
 
-     # 1) WB を最優先コピー
+    # --- 0) baseline_gdp_usd を安全に決定（未定義変数は使わない） ---
+    baseline_gdp_usd = None
+    if isinstance(wb, dict):
+        baseline_gdp_usd = wb.get("baseline_gdp_usd") or wb.get("gdp") or wb.get("ny_gdp_mktp_cd")
+    if baseline_gdp_usd is None and isinstance(imf, dict):
+        baseline_gdp_usd = imf.get("baseline_gdp_usd")
+    if baseline_gdp_usd is None:
+        baseline_gdp_usd = 1.0e10
+
+    # --- 1) World Bank を最優先でコピー ---
     if isinstance(wb, dict):
         for k in ("display_name","iso3","baseline_gdp_usd","income_tier",
                   "inflation_recent","openness_ratio","investment_rate",
                   "labor_growth","debt_to_gdp","gdp_per_capita"):
-            if wb.get(k) is not None:
-                prof[k] = wb[k]
+            v = wb.get(k)
+            if v is not None:
+                prof[k] = v
 
-    
-   # wb（= World Bank の辞書）から 1人あたりGDP を読む。
-# providers/data_worldbank.py で profile に "gdp_per_capita" を入れていないなら None でOK。
-        gdp_pc_val = (wb or {}).get("gdp_per_capita")  # 無ければ None
-
-
-# 既に用意してある正規化＆パラメータ取得ヘルパーを使う（以前ご案内のもの）
-        base_tier = ((overrides or {}).get("income_tier")
-                 or prof.get("income_tier")
-                 or pick_tier_by_gdp_pc(prof.get("gdp_per_capita"))
-                 or "middle_income")
-
-        tier_name = _normalize_tier(base_tier)
-        prof["income_tier"] = tier_name
-        prof["tier_params"] = get_tier_params(tier_name)
-        
-# まずはWBが持っている所得ティアを優先、無ければ gdp_pc から推定
-        tier_from_wb  = (wb or {}).get("income_tier")
-        tier_name = tier_from_wb or pick_tier_by_gdp_pc(gdp_pc_val)
-
-
-    prof = {
-        "display_name":country_name or "Unknown",
-        "baseline_gdp_usd": overrides.get("baseline_gdp_usd",1e10),
-        "income_tier": tier_name,
-        "inflation_recent": overrides.get("inflation_recent", infl if infl is not None else tier.get("inflation_target", 4.0)),
-        "openness_ratio": overrides.get("openness_ratio", wb.get("openness", 0.8)/100.0 if wb.get("openness") else 0.8),
-        "investment_rate": overrides.get("investment_rate", wb.get("investment_rate", 25.0)/100.0 if wb.get("investment_rate") else 0.25),
-        "labor_growth": overrides.get("labor_growth", wb.get("pop_growth", 1.0)*100 if wb.get("pop_growth") else 1.0),
-        "debt_to_gdp": overrides.get("debt_to_gdp", imf.get("debt_to_gdp") if imf else 0.5),
-        "tier_params": tier
-    }
-    
+    # --- 2) デフォルトで穴埋め ---
     prof.setdefault("display_name", country_name)
-    prof.setdefault("baseline_gdp_usd", 1.0e10)
+    prof["baseline_gdp_usd"] = prof.get("baseline_gdp_usd", baseline_gdp_usd)
     prof.setdefault("income_tier", "middle_income")
-    prof.setdefault("inflation_recent", 4.0)
-    prof.setdefault("openness_ratio", 0.8)
-    prof.setdefault("investment_rate", 0.25)
-    prof.setdefault("labor_growth", 1.0)
+    prof.setdefault("inflation_recent", 4.0)   # %
+    prof.setdefault("openness_ratio", 0.8)     # ratio
+    prof.setdefault("investment_rate", 0.25)   # ratio
+    prof.setdefault("labor_growth", 1.0)       # %
     prof.setdefault("debt_to_gdp", 0.5)
 
-    # 3) overrides 反映（両キー互換）
+    # --- 3) overrides 反映（baseline_gdp の旧キー互換も吸収） ---
     if overrides:
         if overrides.get("baseline_gdp_usd") is not None:
             prof["baseline_gdp_usd"] = overrides["baseline_gdp_usd"]
         elif overrides.get("baseline_gdp") is not None:
             prof["baseline_gdp_usd"] = overrides["baseline_gdp"]
         for k, v in overrides.items():
-            if k in ("baseline_gdp","baseline_gdp_usd"): 
+            if k in ("baseline_gdp","baseline_gdp_usd"):
                 continue
             if v is not None:
                 prof[k] = v
 
-    # 5) ティアパラメータを必ず付与
-        base_tier = ((overrides or {}).get("income_tier")
-             or prof.get("income_tier")
-             or pick_tier_by_gdp_pc(prof.get("gdp_per_capita"))
-             or "middle_income")
-        tier_name = _normalize_tier(base_tier)
-        prof["income_tier"] = tier_name
-        prof["tier_params"] = get_tier_params(tier_name)
+    # --- 4) ティア確定（必ず代入される安全版。ここ以外で tier_name を使わない） ---
+    # 先に初期化（これで UnboundLocalError は起きません）
+    tier_name: str = "middle_income"
+
+    # 候補：overrides > 既存プロフ > gdp_per_capita から推定
+    ov_tier = (overrides or {}).get("income_tier") if overrides else None
+    if ov_tier:
+        tier_name = ov_tier
+    elif prof.get("income_tier"):
+        tier_name = prof["income_tier"]
+    else:
+        tier_name = pick_tier_by_gdp_pc(prof.get("gdp_per_capita"))  # None OK
+
+    # 正規化して確定
+    tier_name = _normalize_tier(tier_name)
+    prof["income_tier"] = tier_name
+    prof["tier_params"] = get_tier_params(tier_name)
+
     return prof
+
 
 async def build_country_profile(country_name: str, overrides: dict):
     # 取得（wb=同期→to_thread、他はasync）
@@ -257,8 +248,6 @@ async def build_country_profile(country_name: str, overrides: dict):
     prof = prof or {}
     prof["income_tier"] = _normalize_tier(prof.get("income_tier"))
     prof["tier_params"] = get_tier_params(prof["income_tier"])
-    prof = fuse_profile(wb, imf, fx, trade, overrides, country_name)
-    prof.setdefault("display_name", country_name)
     
     return prof
  
