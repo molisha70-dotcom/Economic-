@@ -130,6 +130,8 @@ async def extract_policies(text: str):
         tasks.append(extract_policies_gemini(text))
     # if os.getenv("ANTHROPIC_API_KEY"):
     #     tasks.append(extract_policies_claude(text))
+    print(f"[extract] providers active={providers}")  # ★追加
+
 
     results = []
     if tasks:
