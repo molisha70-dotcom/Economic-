@@ -255,6 +255,7 @@ async def build_country_profile(country_name: str, overrides: dict):
     prof["income_tier"] = _normalize_tier(prof.get("income_tier"))
     prof["tier_params"] = get_tier_params(prof["income_tier"])
     prof = fuse_profile(wb, imf, fx, trade, overrides, country_name)
+    prof.setdefault("display_name", country_name)
     
     return prof
  
