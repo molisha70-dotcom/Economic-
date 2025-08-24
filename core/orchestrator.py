@@ -179,7 +179,8 @@ def fuse_profile(wb, imf, fx, trade, overrides, country_name: str) -> dict:
 
 
     prof = {
-        "baseline_gdp_usd": overrides.get("baseline_gdp_usd", baseline_gdp or 1e10),
+        "display_name":country_name or "Unknown",
+        "baseline_gdp_usd": overrides.get("baseline_gdp_usd",1e10),
         "income_tier": tier_name,
         "inflation_recent": overrides.get("inflation_recent", infl if infl is not None else tier.get("inflation_target", 4.0)),
         "openness_ratio": overrides.get("openness_ratio", wb.get("openness", 0.8)/100.0 if wb.get("openness") else 0.8),
