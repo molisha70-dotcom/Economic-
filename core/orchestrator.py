@@ -163,13 +163,28 @@ def fuse_profile(wb, imf, fx, trade, overrides, country_name: str) -> dict:
                   "labor_growth","debt_to_gdp"):
             if wb.get(k) is not None:
                 prof[k] = wb[k]
+
+
+    gdp_pc_val = prof.get("gdp_per_capita")  # 無ければ None
+    ov_tier    = (overrides or {}).get("income_tier") if overrides else None
+    if ov_tier:
+        tier_name = ov_tier
+    elif prof.get("income_tier"):
+        tier_name = prof["income_tier"]
+    else:
+        tier_name = pick_tier_by_gdp_pc(gdp_pc_val)
+
+    tier_name = _normalize_tier(tier_name)
+    prof["income_tier"] = tier_name
+    prof["tier_params"] = get_tier_params(tier_name)
+    
    # wb（= World Bank の辞書）から 1人あたりGDP を読む。
 # providers/data_worldbank.py で profile に "gdp_per_capita" を入れていないなら None でOK。
         gdp_pc_val = (wb or {}).get("gdp_per_capita")  # 無ければ None
 
 # まずはWBが持っている所得ティアを優先、無ければ gdp_pc から推定
         tier_from_wb  = (wb or {}).get("income_tier")
-        tier_name     = tier_from_wb or pick_tier_by_gdp_pc(gdp_pc_val)
+        tier_name = tier_from_wb or pick_tier_by_gdp_pc(gdp_pc_val)
 
 # 既に用意してある正規化＆パラメータ取得ヘルパーを使う（以前ご案内のもの）
         prof["income_tier"] = _normalize_tier(tier_name)
