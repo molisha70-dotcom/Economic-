@@ -163,67 +163,64 @@ def get_last_explain_for_channel(ch: int) -> str | None:
     return _channel_explain.get(ch)
 
 
-async def extract_policies(text: str):
-    tasks = []
-    active = []
+def _normalize_lever_token(s: str) -> str:
+    if not s: return ""
+    t=str(s).strip().lower()
+    if any(k in t for k in ["インフラ","infrastructure","infra","port","rail","grid","logistics","港","港湾","鉄道","送電","電力","物流","ロジ"]): return "infrastructure"
+    if any(k in t for k in ["教育","人材","職業訓練","リスキリング","education","human capital","reskilling"]): return "education"
+    if any(k in t for k in ["規制","規制改革","ガバナンス","手続","ビジネス","regulation","deregulation","governance","business"]): return "regulation"
+    if any(k in t for k in ["半導体","製造","産業","税","減税","税額控除","補助","補助金","industry","semiconductor","manufacturing","tax","subsidy"]): return "industry"
+    if any(k in t for k in ["貿易","通商","輸出","輸入","fta","trade"]): return "trade"
+    return t
 
-    if os.getenv("OPENAI_API_KEY"):
-        tasks.append(extract_policies_openai(text)); active.append("openai")
-    if os.getenv("GEMINI_API_KEY"):
-        tasks.append(extract_policies_gemini(text)); active.append("gemini")
+def _normalize_policies_schema(data: dict) -> dict:
+    if not isinstance(data, dict): return {"policies":[]}
+    items = data.get("policies") or []
+    for p in items:
+        lev = p.get("lever") or []
+        p["lever"] = [_normalize_lever_token(x) for x in (lev if isinstance(lev,(list,tuple)) else [str(lev)]) if x]
+    return {"policies": items}
+
+async def extract_policies(text: str):
+    tasks=[]; active=[]
+    if os.getenv("OPENAI_API_KEY"):  tasks.append(extract_policies_openai(text)); active.append("openai")
+    if os.getenv("GEMINI_API_KEY"):  tasks.append(extract_policies_gemini(text)); active.append("gemini")
     print(f"[extract] providers active={active}")
 
-    results = []
+    results=[]
     if tasks:
         results = await asyncio.gather(*tasks, return_exceptions=True)
-
-    # ローカル（同期）は最後に必ず追加
     try:
         results.append(extract_policies_local(text))
     except Exception as e:
         results.append(e)
 
-    valids = []
+    valids=[]
     for r in results:
         if isinstance(r, Exception):
-            print("[extract] provider error:", repr(r))
-            continue
-
-        data_obj = r
-        if isinstance(r, str):
-            try:
-                data_obj = json.loads(r)
-            except Exception as e:
-                print("[extract] json parse fail:", e)
-                continue
-
+            print("[extract] provider error:", repr(r)); continue
+        obj=r
+        if isinstance(r,str):
+            try: obj=json.loads(r)
+            except Exception as e: print("[extract] json parse fail:",e); continue
         try:
-            data_norm = coerce_extract_output(data_obj)  # ← 既存のバリデータ
-            data_norm = _normalize_policies_schema(data_norm)  # ← ここを必ず通す
-            if data_norm and isinstance(data_norm.get("policies"), list):
-                valids.append(data_norm)
+            data_norm = _normalize_policies_schema(coerce_extract_output(obj))
+            if isinstance(data_norm.get("policies"), list): valids.append(data_norm)
         except Exception as e:
             print("[extract] coerce/normalize fail:", e)
 
-    # 1件も取れなかった場合は、最後の保険：ローカルをもう一度
     if not valids:
-        try:
-            fallback = extract_policies_local(text)
-            if isinstance(fallback, str):
-                fallback = json.loads(fallback)
-            fallback = _normalize_policies_schema(coerce_extract_output(fallback))
-            if fallback and isinstance(fallback.get("policies"), list):
-                valids.append(fallback)
-        except Exception as e:
-            print("[extract] fallback fail:", e)
+        # 最低1件返す保険
+        fb = extract_policies_local(text)
+        if isinstance(fb,str):
+            try: fb=json.loads(fb)
+            except: fb={"policies":[]}
+        valids=[_normalize_policies_schema(coerce_extract_output(fb))]
 
-    # マージ（あなたの merge/選別ロジックでOK）
-    if not valids:
-        return {"policies": []}
     merged = merge_outputs(valids) if 'merge_outputs' in globals() else valids[0]
     print("[extract result]", json.dumps(merged, ensure_ascii=False))
     return merged
-
+    
     # --- 4) ティア確定の直前にヒント補正を入れる（WB失敗時の安全網） ---
     hint = _hint_tier_from_country(prof.get("display_name") or country_name)
     if hint and (not prof.get("income_tier") or str(prof.get("income_tier")).lower() == "middle_income"):
