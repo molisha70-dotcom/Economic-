@@ -135,6 +135,23 @@ async def forecast_cmd(interaction: discord.Interaction, text: str, horizon: int
         await interaction.edit_original_response(content=f"❌ エラー: {type(e).__name__}: {e}")
     lines.append("```\n" + json.dumps(result["policies_struct"], ensure_ascii=False, indent=2) + "\n```")
 
+    pol = result.get("policies_struct") or {}
+    items = pol.get("policies") or []
+    if not items:
+       lines.append("（政策が抽出できませんでした。抽出器の設定/語彙の不一致の可能性）")
+    else:
+       for p in items[:8]:
+           lever = "/".join(p.get("lever", []))
+           lag = p.get("lag_years")
+           scale = p.get("scale") or {}
+           val = scale.get("value"); unit = scale.get("unit","")
+           scale_txt = f"{val} {unit}" if val is not None else "(n/a)"
+           lines.append(f"・{p.get('title','(no title)')}｜{lever}｜lag={lag}｜{scale_txt}")
+
+# 必要なら JSON 丸ごと（デバッグ用）
+# lines.append("```\n" + json.dumps(pol, ensure_ascii=False, indent=2) + "\n```")
+
+
 @tree.command(name="policies", description="直近の政策テキストを抽出して構造化結果を表示")
 @app_commands.describe(text="政策テキスト（箇条書きOK）")
 async def policies_cmd(interaction: discord.Interaction, text: str):
