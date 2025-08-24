@@ -179,7 +179,6 @@ def fuse_profile(wb, imf, fx, trade, overrides, country_name: str) -> dict:
 
 
     prof = {
-        "display_name": country or "Unknown",
         "baseline_gdp_usd": overrides.get("baseline_gdp_usd", baseline_gdp or 1e10),
         "income_tier": tier_name,
         "inflation_recent": overrides.get("inflation_recent", infl if infl is not None else tier.get("inflation_target", 4.0)),
@@ -256,7 +255,6 @@ async def build_country_profile(country_name: str, overrides: dict):
     prof["income_tier"] = _normalize_tier(prof.get("income_tier"))
     prof["tier_params"] = get_tier_params(prof["income_tier"])
     prof = fuse_profile(wb, imf, fx, trade, overrides, country_name)
-    prof.setdefault("display_name", country_name) 
     
     return prof
  
