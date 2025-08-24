@@ -60,7 +60,14 @@ def pick_tier_by_gdp_pc(gdp_pc: float | None) -> str:
     if gdp_pc < 13000: return "middle_income"
     return "high_income"
 
-# ★ これをファイル上部のヘルパー群の近くに追加
+# ---- country name cleanup & tier hints ----
+def _clean_country_name(name: str | None) -> str:
+    # 例: '"Japan" ' → japan
+    if not name:
+        return ""
+    s = str(name).strip().strip('"').strip("'")
+    return s.lower()
+
 COUNTRY_TIER_HINT = {
     # high income
     "japan": "high_income",
@@ -73,16 +80,16 @@ COUNTRY_TIER_HINT = {
     "france": "high_income",
     "italy": "high_income",
     "spain": "high_income",
-    # middle income の代表
+    # middle income
     "vietnam": "middle_income",
     "india": "middle_income",
     "china": "middle_income",
 }
 
 def _hint_tier_from_country(name: str | None) -> str | None:
-    if not name:
-        return None
-    return COUNTRY_TIER_HINT.get(name.strip().lower())
+    key = _clean_country_name(name)
+    return COUNTRY_TIER_HINT.get(key)
+
 
 
 def _normalize_tier(name: str | None) -> str:
@@ -214,6 +221,13 @@ def fuse_profile(wb, imf, fx, trade, overrides, country_name: str) -> dict:
                 continue
             if v is not None:
                 prof[k] = v
+     # --- ★ ヒント強制（ここで一度入れる：WB失敗や引用符付き国名対策） ---
+    # 例: display_name が '"Japan"' とか country_name が '"Korea"' でも拾える
+    name_for_hint = (wb or {}).get("display_name") or country_name or ""
+    hint = _hint_tier_from_country(name_for_hint)
+    if hint: 
+        print(f"[tier-hint] applying hint '{hint}' for country='{name_for_hint}'")
+        prof["income_tier"] = hint
 
     # --- 4) ティア確定（ここ“だけ”で tier_name を決める。未定義にならない） ---
     tier_name: str = "middle_income"  # 先に初期化（UnboundLocalError対策）
@@ -226,10 +240,10 @@ def fuse_profile(wb, imf, fx, trade, overrides, country_name: str) -> dict:
     else:
         tier_name = pick_tier_by_gdp_pc(prof.get("gdp_per_capita"))  # None OK
 
+    tier_name: str = prof.get("income_tier") or "middle_income"
     tier_name = _normalize_tier(tier_name)
     prof["income_tier"] = tier_name
     prof["tier_params"] = get_tier_params(tier_name)
-
     return prof
 
 
