@@ -64,4 +64,4 @@ def extract_policies_local(text: str):
 
     out = {"policies": items, "_model_name": "local_rules_v1"}
     # ライブラリ側が文字列JSONを期待していても大丈夫なように文字列で返す
-    return json.dumps(out, ensure_ascii=False)
+    return out   
