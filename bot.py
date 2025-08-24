@@ -58,7 +58,7 @@ async def forecast_cmd(interaction: discord.Interaction, text: str, horizon: int
             )
         else:
             result = await asyncio.wait_for(
-                asyncio.to_thread(run_pipeline, country=country, horizon=horizon, text=text, overrides=overrides),
+                asyncio.to_thread run_pipeline(country=country, horizon=horizon, text=text, overrides=overrides),
                 timeout=60
             )
 
