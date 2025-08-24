@@ -349,26 +349,32 @@ async def build_country_profile(country_name: str, overrides: dict):
     return prof
  
 
-async def run_pipeline(country: str | None, horizon: int, text: str, overrides: Dict[str, Any]):
+async def run_pipeline(country: str|None, horizon: int, text: str, overrides: dict):
     horizon = max(1, min(10, horizon))
-
-    # 政策抽出 & プロファイル作成
     policies_struct = await extract_policies(text)
-    profile = await build_country_profile(country, overrides)  
-    # ★ 固定値だった forecast(...) を廃止し、プロファイル & 政策で成長パスを計算
-    scenarios = make_growth_paths(
-        profile,
-        (policies_struct or {}).get("policies", []),
-        horizon
-    )
 
-    # CPIパスや説明文は最小限（必要に応じて後で拡張）
-    cpi_path = []  # 使っていなければ空でOK
-    explain  = "Policy-driven forecast based on profile & levers."
+    # ★ ここが肝：抽出0件ならダミー政策を必ず注入して数値が動くか確認
+    items = (policies_struct or {}).get("policies") or []
+    if not items:
+        policies_struct = {
+            "policies":[
+                {"title":"インフラ投資", "lever":["infrastructure"], "lag_years":1,
+                 "scale":{"value":10, "unit":"trillion_yen_per_year"}},
+                {"title":"規制改革", "lever":["regulation"], "lag_years":0, "scale":None}
+            ],
+            "_debug":"fallback_injected"
+        }
+
+    profile  = await build_country_profile(country, overrides)
+
+    # ★ model は policies_struct["policies"] を渡すこと
+    from core.model import forecast as model_forecast
+    scenarios, cpi_path, explain = model_forecast(profile, policies_struct.get("policies", []), horizon)
+    explain = (explain or "") + f"\n[PoliciesUsed] {json.dumps(policies_struct, ensure_ascii=False)}"
     explain += f"\n[ProfileResolved] {json.dumps(profile, ensure_ascii=False)}"
 
     return {
-        "scenarios": scenarios,          # {"BASE":[..], "LOW":[..], "HIGH":[..]}
+        "scenarios": scenarios,
         "cpi": cpi_path,
         "explain": explain,
         "profile_used": profile,
