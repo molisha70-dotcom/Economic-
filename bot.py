@@ -9,29 +9,6 @@ from core.orchestrator import run_pipeline, set_overrides_for_channel, get_overr
 import json
 from core.orchestrator import extract_policies, get_overrides_for_channel
 
-@tree.command(name="policies", description="直近の政策テキストを抽出して構造化結果を表示")
-@app_commands.describe(text="政策テキスト（箇条書きOK）")
-async def policies_cmd(interaction: discord.Interaction, text: str):
-    await interaction.response.defer(thinking=True)
-    try:
-        data = await extract_policies(text)
-        # 見やすく整形（上位8件だけ）
-        items = (data or {}).get("policies", [])
-        head = items[:8]
-        lines = [f"抽出ポリシー数: {len(items)}"]
-        for i, p in enumerate(head, 1):
-            lever = "/".join(p.get("lever", []))
-            lag   = p.get("lag_years")
-            scale = p.get("scale", {})
-            unit  = scale.get("unit", "")
-            val   = scale.get("value")
-            scale_txt = f"{val} {unit}" if val is not None else "(n/a)"
-            lines.append(f"{i}. {p.get('title','(no title)')}｜lever={lever}｜lag={lag}｜scale={scale_txt}")
-        if len(items) > 8:
-            lines.append(f"...and {len(items)-8} more")
-        await interaction.followup.send("```\n" + "\n".join(lines) + "\n```")
-    except Exception as e:
-        await interaction.followup.send(f"❌ policies error: {type(e).__name__}: {e}")
 
 
 load_dotenv()
@@ -150,6 +127,31 @@ async def forecast_cmd(interaction: discord.Interaction, text: str, horizon: int
 
     except Exception as e:
         await interaction.edit_original_response(content=f"❌ エラー: {type(e).__name__}: {e}")
+
+@tree.command(name="policies", description="直近の政策テキストを抽出して構造化結果を表示")
+@app_commands.describe(text="政策テキスト（箇条書きOK）")
+async def policies_cmd(interaction: discord.Interaction, text: str):
+    await interaction.response.defer(thinking=True)
+    try:
+        data = await extract_policies(text)
+        # 見やすく整形（上位8件だけ）
+        items = (data or {}).get("policies", [])
+        head = items[:8]
+        lines = [f"抽出ポリシー数: {len(items)}"]
+        for i, p in enumerate(head, 1):
+            lever = "/".join(p.get("lever", []))
+            lag   = p.get("lag_years")
+            scale = p.get("scale", {})
+            unit  = scale.get("unit", "")
+            val   = scale.get("value")
+            scale_txt = f"{val} {unit}" if val is not None else "(n/a)"
+            lines.append(f"{i}. {p.get('title','(no title)')}｜lever={lever}｜lag={lag}｜scale={scale_txt}")
+        if len(items) > 8:
+            lines.append(f"...and {len(items)-8} more")
+        await interaction.followup.send("```\n" + "\n".join(lines) + "\n```")
+    except Exception as e:
+        await interaction.followup.send(f"❌ policies error: {type(e).__name__}: {e}")
+
 
 
 @tree.command(name="explain", description="直近の推計の根拠・係数を表示")
