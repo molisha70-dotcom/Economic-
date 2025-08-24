@@ -165,44 +165,64 @@ def get_last_explain_for_channel(ch: int) -> str | None:
 
 async def extract_policies(text: str):
     tasks = []
-    # ここには「await できるもの（async関数呼び出し）」だけを入れる
-    if os.getenv("OPENAI_API_KEY"):
-        tasks.append(extract_policies_openai(text))
-    if os.getenv("GEMINI_API_KEY"):
-        tasks.append(extract_policies_gemini(text))
-    # if os.getenv("ANTHROPIC_API_KEY"):
-    #     tasks.append(extract_policies_claude(text))
+    active = []
 
+    if os.getenv("OPENAI_API_KEY"):
+        tasks.append(extract_policies_openai(text)); active.append("openai")
+    if os.getenv("GEMINI_API_KEY"):
+        tasks.append(extract_policies_gemini(text)); active.append("gemini")
+    print(f"[extract] providers active={active}")
 
     results = []
     if tasks:
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    # ローカル抽出は同期関数なので、gather に混ぜず “あとから” 追加
+    # ローカル（同期）は最後に必ず追加
     try:
         results.append(extract_policies_local(text))
     except Exception as e:
         results.append(e)
 
-    # 以降は変えずにOK（JSON → 正規化 → 合議）
     valids = []
     for r in results:
         if isinstance(r, Exception):
+            print("[extract] provider error:", repr(r))
             continue
+
+        data_obj = r
+        if isinstance(r, str):
+            try:
+                data_obj = json.loads(r)
+            except Exception as e:
+                print("[extract] json parse fail:", e)
+                continue
+
         try:
-            data_obj = json.loads(r) if isinstance(r, str) else r
-            data_norm = coerce_extract_output(data_obj)
-            data_norm = _normalize_policies_schema(data_norm)   # ★追加：lever を英語カテゴリに
-            mname = (data_obj.get("_model_name") if isinstance(data_obj, dict) else None) or "unknown"
-            data_norm["_model_name"] = mname
-            valids.append(data_norm)
-        except Exception:
-            continue
+            data_norm = coerce_extract_output(data_obj)  # ← 既存のバリデータ
+            data_norm = _normalize_policies_schema(data_norm)  # ← ここを必ず通す
+            if data_norm and isinstance(data_norm.get("policies"), list):
+                valids.append(data_norm)
+        except Exception as e:
+            print("[extract] coerce/normalize fail:", e)
 
+    # 1件も取れなかった場合は、最後の保険：ローカルをもう一度
     if not valids:
-        raise RuntimeError("政策抽出に失敗（全プロバイダ）")
+        try:
+            fallback = extract_policies_local(text)
+            if isinstance(fallback, str):
+                fallback = json.loads(fallback)
+            fallback = _normalize_policies_schema(coerce_extract_output(fallback))
+            if fallback and isinstance(fallback.get("policies"), list):
+                valids.append(fallback)
+        except Exception as e:
+            print("[extract] fallback fail:", e)
 
-    return merge_outputs(valids)
+    # マージ（あなたの merge/選別ロジックでOK）
+    if not valids:
+        return {"policies": []}
+    merged = merge_outputs(valids) if 'merge_outputs' in globals() else valids[0]
+    print("[extract result]", json.dumps(merged, ensure_ascii=False))
+    return merged
 
     # --- 4) ティア確定の直前にヒント補正を入れる（WB失敗時の安全網） ---
     hint = _hint_tier_from_country(prof.get("display_name") or country_name)
