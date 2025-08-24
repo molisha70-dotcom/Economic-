@@ -26,46 +26,31 @@ async def _run_sync(func, *args, **kwargs):
 with open("tiers.yml", "r", encoding="utf-8") as f:
     TIERS = yaml.safe_load(f)
     
-# ==== ティア定義（importsの直後に置く）====
+# ==== TIER定義 & ヘルパー ====
 TIERS = {
     "high_income": {
-        "potential_g": 2.0,
-        "capital_share": 0.35,
-        "inflation_target": 2.0,
-        "fiscal_multiplier": {"capex": 0.8, "current": 0.4},
-        "trade_elasticity": 0.2,
-        "tfp_coeff": {
-            "logistics": 0.15, "automation": 0.25, "education": 0.15, "regulation": 0.25,
-            "governance": 0.2, "energy": 0.1, "infrastructure": 0.1, "trade": 0.15,
-            "industry": 0.15, "finance": 0.1, "security": 0.1
-        },
-        "default_lags": {"infra": 2, "ports": 2, "education": 3, "regulation": 1}
+        "potential_g": 2.0, "capital_share": 0.35, "inflation_target": 2.0,
+        "fiscal_multiplier": {"capex": 0.8, "current": 0.4}, "trade_elasticity": 0.2,
+        "tfp_coeff": {"logistics":0.15,"automation":0.25,"education":0.15,"regulation":0.25,
+                      "governance":0.2,"energy":0.1,"infrastructure":0.1,"trade":0.15,
+                      "industry":0.15,"finance":0.1,"security":0.1},
+        "default_lags": {"infra":2,"ports":2,"education":3,"regulation":1}
     },
     "middle_income": {
-        "potential_g": 4.0,
-        "capital_share": 0.35,
-        "inflation_target": 4.0,
-        "fiscal_multiplier": {"capex": 1.0, "current": 0.5},
-        "trade_elasticity": 0.3,
-        "tfp_coeff": {
-            "logistics": 0.2, "automation": 0.3, "education": 0.2, "regulation": 0.3,
-            "governance": 0.2, "energy": 0.15, "infrastructure": 0.15, "trade": 0.2,
-            "industry": 0.2, "finance": 0.1, "security": 0.1
-        },
-        "default_lags": {"infra": 2, "ports": 2, "education": 3, "regulation": 1}
+        "potential_g": 4.0, "capital_share": 0.35, "inflation_target": 4.0,
+        "fiscal_multiplier": {"capex": 1.0, "current": 0.5}, "trade_elasticity": 0.3,
+        "tfp_coeff": {"logistics":0.2,"automation":0.3,"education":0.2,"regulation":0.3,
+                      "governance":0.2,"energy":0.15,"infrastructure":0.15,"trade":0.2,
+                      "industry":0.2,"finance":0.1,"security":0.1},
+        "default_lags": {"infra":2,"ports":2,"education":3,"regulation":1}
     },
     "low_income": {
-        "potential_g": 5.5,
-        "capital_share": 0.35,
-        "inflation_target": 5.0,
-        "fiscal_multiplier": {"capex": 1.2, "current": 0.6},
-        "trade_elasticity": 0.35,
-        "tfp_coeff": {
-            "logistics": 0.25, "automation": 0.2, "education": 0.25, "regulation": 0.25,
-            "governance": 0.2, "energy": 0.2, "infrastructure": 0.2, "trade": 0.25,
-            "industry": 0.25, "finance": 0.1, "security": 0.1
-        },
-        "default_lags": {"infra": 2, "ports": 2, "education": 3, "regulation": 1}
+        "potential_g": 5.5, "capital_share": 0.35, "inflation_target": 5.0,
+        "fiscal_multiplier": {"capex": 1.2, "current": 0.6}, "trade_elasticity": 0.35,
+        "tfp_coeff": {"logistics":0.25,"automation":0.2,"education":0.25,"regulation":0.25,
+                      "governance":0.2,"energy":0.2,"infrastructure":0.2,"trade":0.25,
+                      "industry":0.25,"finance":0.1,"security":0.1},
+        "default_lags": {"infra":2,"ports":2,"education":3,"regulation":1}
     },
 }
 
@@ -156,11 +141,11 @@ def pick_tier(gdp_pc: float | None) -> str:
 def fuse_profile(wb, imf, fx, trade, overrides, country_name: str) -> dict:
     prof: dict = {}
 
-    # 1) 最優先：World Bank
+     # 1) WB を最優先コピー
     if isinstance(wb, dict):
         for k in ("display_name","iso3","baseline_gdp_usd","income_tier",
                   "inflation_recent","openness_ratio","investment_rate",
-                  "labor_growth","debt_to_gdp"):
+                  "labor_growth","debt_to_gdp","gdp_per_capita"):
             if wb.get(k) is not None:
                 prof[k] = wb[k]
 
@@ -219,16 +204,26 @@ def fuse_profile(wb, imf, fx, trade, overrides, country_name: str) -> dict:
     prof.setdefault("labor_growth", 1.0)
     prof.setdefault("debt_to_gdp", 0.5)
 
-    # 4) overrides の反映
+    # 3) overrides 反映（両キー互換）
     if overrides:
+        if overrides.get("baseline_gdp_usd") is not None:
+            prof["baseline_gdp_usd"] = overrides["baseline_gdp_usd"]
+        elif overrides.get("baseline_gdp") is not None:
+            prof["baseline_gdp_usd"] = overrides["baseline_gdp"]
         for k, v in overrides.items():
+            if k in ("baseline_gdp","baseline_gdp_usd"): 
+                continue
             if v is not None:
                 prof[k] = v
 
     # 5) ティアパラメータを必ず付与
-    prof["income_tier"] = _normalize_tier(prof.get("income_tier"))
-    prof["tier_params"] = get_tier_params(prof["income_tier"])
-
+        base_tier = ((overrides or {}).get("income_tier")
+                 or prof.get("income_tier")
+                 or pick_tier_by_gdp_pc(prof.get("gdp_per_capita"))
+                 or "middle_income")
+        tier_name = _normalize_tier(base_tier)
+        prof["income_tier"] = tier_name
+        prof["tier_params"] = get_tier_params(tier_name)
     return prof
 
 async def build_country_profile(country_name: str, overrides: dict):
