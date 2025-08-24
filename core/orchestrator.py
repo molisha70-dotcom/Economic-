@@ -89,6 +89,41 @@ COUNTRY_TIER_HINT = {
 def _hint_tier_from_country(name: str | None) -> str | None:
     key = _clean_country_name(name)
     return COUNTRY_TIER_HINT.get(key)
+    
+# --- lever を英語カテゴリへ正規化（日本語にも対応）---
+def _normalize_lever_token(s: str) -> str:
+    if not s:
+        return ""
+    t = str(s).strip().lower()
+    # インフラ
+    if any(k in t for k in ["インフラ", "インフラ投資", "道路", "港", "港湾", "鉄道", "送電", "電力網", "空港", "物流", "ロジ", "ロジスティクス", "infrastructure", "infra", "port", "rail", "grid", "logistics"]):
+        return "infrastructure"
+    # 教育・人材
+    if any(k in t for k in ["教育", "人材", "訓練", "職業訓練", "リスキリング", "education", "human capital", "reskilling"]):
+        return "education"
+    # 規制・統治
+    if any(k in t for k in ["規制", "規制改革", "ガバナンス", "行政", "手続", "ビジネス環境", "regulation", "deregulation", "governance", "business"]):
+        return "regulation"
+    # 産業・税・補助
+    if any(k in t for k in ["半導体", "製造", "産業", "税", "減税", "補助", "補助金", "industry", "semiconductor", "manufacturing", "tax", "subsidy"]):
+        return "industry"
+    # 貿易・開放
+    if any(k in t for k in ["貿易", "輸出", "輸入", "fta", "通商", "関税", "trade", "fta"]):
+        return "trade"
+    return t
+
+def _normalize_policies_schema(data: dict) -> dict:
+    """policies の lever 配列を英語カテゴリに正規化"""
+    if not isinstance(data, dict):
+        return data
+    items = data.get("policies") or []
+    for p in items:
+        lev = p.get("lever") or []
+        if isinstance(lev, (list, tuple)):
+            p["lever"] = [_normalize_lever_token(x) for x in lev if x]
+        else:
+            p["lever"] = [_normalize_lever_token(str(lev))]
+    return data
 
 
 
@@ -157,6 +192,7 @@ async def extract_policies(text: str):
         try:
             data_obj = json.loads(r) if isinstance(r, str) else r
             data_norm = coerce_extract_output(data_obj)
+            data_norm = _normalize_policies_schema(data_norm)   # ★追加：lever を英語カテゴリに
             mname = (data_obj.get("_model_name") if isinstance(data_obj, dict) else None) or "unknown"
             data_norm["_model_name"] = mname
             valids.append(data_norm)
