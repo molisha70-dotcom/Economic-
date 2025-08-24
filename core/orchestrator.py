@@ -143,7 +143,7 @@ def fuse_profile(wb, imf, fx, trade, overrides, country_name: str) -> dict:
     """
     prof: dict = {}
 
-    # --- 0) baseline_gdp_usd を安全に決定（未定義変数は使わない） ---
+    # --- 0) baseline_gdp_usd を安全に決定 ---
     baseline_gdp_usd = None
     if isinstance(wb, dict):
         baseline_gdp_usd = wb.get("baseline_gdp_usd") or wb.get("gdp") or wb.get("ny_gdp_mktp_cd")
@@ -161,7 +161,7 @@ def fuse_profile(wb, imf, fx, trade, overrides, country_name: str) -> dict:
             if v is not None:
                 prof[k] = v
 
-    # --- 2) デフォルトで穴埋め ---
+    # --- 2) デフォルト穴埋め ---
     prof.setdefault("display_name", country_name)
     prof["baseline_gdp_usd"] = prof.get("baseline_gdp_usd", baseline_gdp_usd)
     prof.setdefault("income_tier", "middle_income")
@@ -171,7 +171,7 @@ def fuse_profile(wb, imf, fx, trade, overrides, country_name: str) -> dict:
     prof.setdefault("labor_growth", 1.0)       # %
     prof.setdefault("debt_to_gdp", 0.5)
 
-    # --- 3) overrides 反映（baseline_gdp の旧キー互換も吸収） ---
+    # --- 3) overrides 反映（旧キー baseline_gdp 互換も吸収） ---
     if overrides:
         if overrides.get("baseline_gdp_usd") is not None:
             prof["baseline_gdp_usd"] = overrides["baseline_gdp_usd"]
@@ -183,11 +183,9 @@ def fuse_profile(wb, imf, fx, trade, overrides, country_name: str) -> dict:
             if v is not None:
                 prof[k] = v
 
-    # --- 4) ティア確定（必ず代入される安全版。ここ以外で tier_name を使わない） ---
-    # 先に初期化（これで UnboundLocalError は起きません）
-    tier_name: str = "middle_income"
+    # --- 4) ティア確定（ここ“だけ”で tier_name を決める） ---
+    tier_name: str = "middle_income"  # 先に初期化（未定義対策）
 
-    # 候補：overrides > 既存プロフ > gdp_per_capita から推定
     ov_tier = (overrides or {}).get("income_tier") if overrides else None
     if ov_tier:
         tier_name = ov_tier
@@ -196,12 +194,12 @@ def fuse_profile(wb, imf, fx, trade, overrides, country_name: str) -> dict:
     else:
         tier_name = pick_tier_by_gdp_pc(prof.get("gdp_per_capita"))  # None OK
 
-    # 正規化して確定
     tier_name = _normalize_tier(tier_name)
     prof["income_tier"] = tier_name
     prof["tier_params"] = get_tier_params(tier_name)
 
     return prof
+
 
 
 async def build_country_profile(country_name: str, overrides: dict):
@@ -248,7 +246,6 @@ async def build_country_profile(country_name: str, overrides: dict):
     prof = prof or {}
     prof["income_tier"] = _normalize_tier(prof.get("income_tier"))
     prof["tier_params"] = get_tier_params(prof["income_tier"])
-    
     return prof
  
 
