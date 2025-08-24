@@ -60,6 +60,31 @@ def pick_tier_by_gdp_pc(gdp_pc: float | None) -> str:
     if gdp_pc < 13000: return "middle_income"
     return "high_income"
 
+# ★ これをファイル上部のヘルパー群の近くに追加
+COUNTRY_TIER_HINT = {
+    # high income
+    "japan": "high_income",
+    "korea": "high_income",
+    "south korea": "high_income",
+    "republic of korea": "high_income",
+    "united states": "high_income",
+    "united kingdom": "high_income",
+    "germany": "high_income",
+    "france": "high_income",
+    "italy": "high_income",
+    "spain": "high_income",
+    # middle income の代表
+    "vietnam": "middle_income",
+    "india": "middle_income",
+    "china": "middle_income",
+}
+
+def _hint_tier_from_country(name: str | None) -> str | None:
+    if not name:
+        return None
+    return COUNTRY_TIER_HINT.get(name.strip().lower())
+
+
 def _normalize_tier(name: str | None) -> str:
     """HIC/MIC/LIC や表記ゆれを規格化してキー（*_income）に揃える"""
     if not name:
@@ -134,6 +159,12 @@ async def extract_policies(text: str):
         raise RuntimeError("政策抽出に失敗（全プロバイダ）")
 
     return merge_outputs(valids)
+
+    # --- 4) ティア確定の直前にヒント補正を入れる（WB失敗時の安全網） ---
+    hint = _hint_tier_from_country(prof.get("display_name") or country_name)
+    if hint and (not prof.get("income_tier") or str(prof.get("income_tier")).lower() == "middle_income"):
+        # すでに high/low が確実なら触らない。middle または None のときだけ上書き
+        prof["income_tier"] = hint
             
 
 def fuse_profile(wb, imf, fx, trade, overrides, country_name: str) -> dict:
