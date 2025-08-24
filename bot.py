@@ -150,8 +150,8 @@ async def forecast_cmd(interaction: discord.Interaction, text: str, horizon: int
            lines.append(f"・{p.get('title','(no title)')}｜{lever}｜lag={lag}｜{scale_txt}")
 
 # モデルの内訳（pol が 0.00 かどうか必ず見える）
-lines.append("")
-lines.append("```\n" + (result.get("explain") or "") + "\n```")
+    lines.append("")
+    lines.append("```\n" + (result.get("explain") or "") + "\n```")
 
 # 必要なら JSON 丸ごと（デバッグ用）
 # lines.append("```\n" + json.dumps(pol, ensure_ascii=False, indent=2) + "\n```")
