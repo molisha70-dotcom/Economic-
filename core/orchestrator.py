@@ -187,14 +187,14 @@ def fuse_profile(wb, imf, fx, trade, overrides, country_name: str) -> dict:
         tier_name = tier_from_wb or pick_tier_by_gdp_pc(gdp_pc_val)
 
 # 既に用意してある正規化＆パラメータ取得ヘルパーを使う（以前ご案内のもの）
-       base_tier = ((overrides or {}).get("income_tier")
+        base_tier = ((overrides or {}).get("income_tier")
                  or prof.get("income_tier")
                  or pick_tier_by_gdp_pc(prof.get("gdp_per_capita"))
                  or "middle_income")
 
-    tier_name = _normalize_tier(base_tier)
-    prof["income_tier"] = tier_name
-    prof["tier_params"] = get_tier_params(tier_name)
+        tier_name = _normalize_tier(base_tier)
+        prof["income_tier"] = tier_name
+        prof["tier_params"] = get_tier_params(tier_name)
 
 
 
