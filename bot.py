@@ -5,9 +5,6 @@ from discord import app_commands
 from dotenv import load_dotenv
 
 from core.orchestrator import run_pipeline, set_overrides_for_channel, get_overrides_for_channel, get_last_explain_for_channel
-# 先頭の import 群に追加
-import json
-from core.orchestrator import extract_policies, get_overrides_for_channel
 
 
 
@@ -21,9 +18,17 @@ tree = app_commands.CommandTree(client)
 
 @client.event
 async def on_ready():
-    await tree.sync()
-    print(f"Logged in as {client.user}")
-
+   try:
+        if GUILD_ID:
+            guild = discord.Object(id=GUILD_ID)
+            synced = await tree.sync(guild=guild)
+            print(f"[slash] synced to guild {GUILD_ID}: {len(synced)} commands")
+        else:
+            synced = await tree.sync()  # グローバル同期（時間がかかること有）
+            print(f"[slash] synced globally: {len(synced)} commands")
+    except Exception as e:
+        print("[slash] sync error:", e)
+        
 @tree.command(name="ping", description="動作確認")
 async def ping(interaction: discord.Interaction):
     await interaction.response.send_message("Pong! 🏓 Bot is alive.")
