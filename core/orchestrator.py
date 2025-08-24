@@ -261,13 +261,12 @@ async def build_country_profile(country_name: str, overrides: dict):
     return prof
  
 
-async def run_pipeline(country: str|None, horizon: int, text: str, overrides: Dict[str,Any]):
+async def run_pipeline(country: str | None, horizon: int, text: str, overrides: Dict[str, Any]):
     horizon = max(1, min(10, horizon))
 
     # 政策抽出 & プロファイル作成
     policies_struct = await extract_policies(text)
-    profile         = await build_country_profile(country, overrides)
-
+    profile = await build_country_profile(country, overrides)  
     # ★ 固定値だった forecast(...) を廃止し、プロファイル & 政策で成長パスを計算
     scenarios = make_growth_paths(
         profile,
