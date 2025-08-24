@@ -149,19 +149,6 @@ def fuse_profile(wb, imf, fx, trade, overrides, country_name: str) -> dict:
             if wb.get(k) is not None:
                 prof[k] = wb[k]
 
-
-        gdp_pc_val = prof.get("gdp_per_capita")  # 無ければ None
-        ov_tier    = (overrides or {}).get("income_tier") if overrides else None
-        if ov_tier:
-          tier_name = ov_tier
-        elif prof.get("income_tier"):
-          tier_name = prof["income_tier"]
-        else:
-          tier_name = pick_tier_by_gdp_pc(gdp_pc_val)
-
-        tier_name = _normalize_tier(tier_name)
-        prof["income_tier"] = tier_name
-        prof["tier_params"] = get_tier_params(tier_name)
     
    # wb（= World Bank の辞書）から 1人あたりGDP を読む。
 # providers/data_worldbank.py で profile に "gdp_per_capita" を入れていないなら None でOK。
@@ -218,9 +205,9 @@ def fuse_profile(wb, imf, fx, trade, overrides, country_name: str) -> dict:
 
     # 5) ティアパラメータを必ず付与
         base_tier = ((overrides or {}).get("income_tier")
-                 or prof.get("income_tier")
-                 or pick_tier_by_gdp_pc(prof.get("gdp_per_capita"))
-                 or "middle_income")
+             or prof.get("income_tier")
+             or pick_tier_by_gdp_pc(prof.get("gdp_per_capita"))
+             or "middle_income")
         tier_name = _normalize_tier(base_tier)
         prof["income_tier"] = tier_name
         prof["tier_params"] = get_tier_params(tier_name)
