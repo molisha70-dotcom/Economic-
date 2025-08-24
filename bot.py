@@ -135,18 +135,23 @@ async def forecast_cmd(interaction: discord.Interaction, text: str, horizon: int
         await interaction.edit_original_response(content=f"❌ エラー: {type(e).__name__}: {e}")
     lines.append("```\n" + json.dumps(result["policies_struct"], ensure_ascii=False, indent=2) + "\n```")
 
+   # .../forecast ハンドラ内、表示の最後に追記
     pol = result.get("policies_struct") or {}
     items = pol.get("policies") or []
     if not items:
-       lines.append("（政策が抽出できませんでした。抽出器の設定/語彙の不一致の可能性）")
+       lines.append("（政策が抽出できませんでした）")
     else:
        for p in items[:8]:
-           lever = "/".join(p.get("lever", []))
-           lag = p.get("lag_years")
-           scale = p.get("scale") or {}
-           val = scale.get("value"); unit = scale.get("unit","")
+           lever="/".join(p.get("lever",[]))
+           lag=p.get("lag_years")
+           sc = p.get("scale") or {}
+           val,unit = sc.get("value"), sc.get("unit","")
            scale_txt = f"{val} {unit}" if val is not None else "(n/a)"
            lines.append(f"・{p.get('title','(no title)')}｜{lever}｜lag={lag}｜{scale_txt}")
+
+# モデルの内訳（pol が 0.00 かどうか必ず見える）
+lines.append("")
+lines.append("```\n" + (result.get("explain") or "") + "\n```")
 
 # 必要なら JSON 丸ごと（デバッグ用）
 # lines.append("```\n" + json.dumps(pol, ensure_ascii=False, indent=2) + "\n```")
