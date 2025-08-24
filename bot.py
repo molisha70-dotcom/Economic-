@@ -1,4 +1,4 @@
-
+import json
 import os, asyncio, json
 import discord
 from discord import app_commands
@@ -133,6 +133,7 @@ async def forecast_cmd(interaction: discord.Interaction, text: str, horizon: int
 
     except Exception as e:
         await interaction.edit_original_response(content=f"❌ エラー: {type(e).__name__}: {e}")
+    lines.append("```\n" + json.dumps(result["policies_struct"], ensure_ascii=False, indent=2) + "\n```")
 
 @tree.command(name="policies", description="直近の政策テキストを抽出して構造化結果を表示")
 @app_commands.describe(text="政策テキスト（箇条書きOK）")
