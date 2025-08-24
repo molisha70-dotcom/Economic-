@@ -26,7 +26,7 @@ async def on_ready():
         else:
             synced = await tree.sync()  # グローバル同期（時間がかかること有）
             print(f"[slash] synced globally: {len(synced)} commands")
-     except Exception as e:
+   except Exception as e:
          print("[slash] sync error:", e)
         
 @tree.command(name="ping", description="動作確認")
