@@ -123,15 +123,13 @@ def get_last_explain_for_channel(ch: int) -> str | None:
 
 async def extract_policies(text: str):
     tasks = []
-    providers=[]
     # ここには「await できるもの（async関数呼び出し）」だけを入れる
     if os.getenv("OPENAI_API_KEY"):
-        tasks.append(extract_policies_openai(text));providers.append("openai")
+        tasks.append(extract_policies_openai(text))
     if os.getenv("GEMINI_API_KEY"):
-        tasks.append(extract_policies_gemini(text));providers.append("gemini")
+        tasks.append(extract_policies_gemini(text))
     # if os.getenv("ANTHROPIC_API_KEY"):
     #     tasks.append(extract_policies_claude(text))
-    print(f"[extract] providers active={providers}")  # ★追加
 
 
     results = []
