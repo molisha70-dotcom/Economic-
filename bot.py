@@ -13,6 +13,7 @@ from core.orchestrator import extract_policies, get_overrides_for_channel
 
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
+GUILD_ID = int(os.getenv("DISCORD_GUILD_ID", "0")) 
 
 INTENTS = discord.Intents.default()
 client = discord.Client(intents=INTENTS)
