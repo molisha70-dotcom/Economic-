@@ -219,7 +219,14 @@ async def extract_policies(text: str):
 
     merged = merge_outputs(valids) if 'merge_outputs' in globals() else valids[0]
     print("[extract result]", json.dumps(merged, ensure_ascii=False))
-    return merged
+    # ★ ここで必ず dict {"policies":[...]} にそろえる
+if isinstance(merged, list):
+    merged = {"policies": merged}
+elif not isinstance(merged, dict):
+    merged = {"policies": []}
+
+print("[extract result]", json.dumps(merged, ensure_ascii=False))
+return merged
     
     # --- 4) ティア確定の直前にヒント補正を入れる（WB失敗時の安全網） ---
     hint = _hint_tier_from_country(prof.get("display_name") or country_name)
@@ -352,6 +359,23 @@ async def build_country_profile(country_name: str, overrides: dict):
 async def run_pipeline(country: str|None, horizon: int, text: str, overrides: dict):
     horizon = max(1, min(10, horizon))
     policies_struct = await extract_policies(text)
+    raw = await extract_policies(text)
+
+# ★ 戻り値の正規化：dict/str/list 何が来ても dict{"policies": [...]} にする
+if isinstance(raw, dict):
+    policies_struct = raw
+elif isinstance(raw, list):
+    policies_struct = {"policies": raw}
+elif isinstance(raw, str):
+    try:
+        obj = json.loads(raw)
+        policies_struct = obj if isinstance(obj, dict) else {"policies": (obj or [])}
+    except Exception:
+        policies_struct = {"policies": []}
+else:
+    policies_struct = {"policies": []}
+
+items = policies_struct.get("policies") or []
 
     # ★ ここが肝：抽出0件ならダミー政策を必ず注入して数値が動くか確認
     items = (policies_struct or {}).get("policies") or []
