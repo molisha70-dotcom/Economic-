@@ -137,6 +137,9 @@ async def forecast_cmd(interaction: discord.Interaction, text: str, horizon: int
 
    # .../forecast ハンドラ内、表示の最後に追記
     pol = result.get("policies_struct") or {}
+    if isinstance(pol, list):
+     pol = {"policies": pol}
+    items = pol.get("policies") or []
     items = pol.get("policies") or []
     if not items:
        lines.append("（政策が抽出できませんでした）")
